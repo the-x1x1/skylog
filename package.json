@@ -1,0 +1,40 @@
+{
+  "name": "conversation-journal",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local-first visual journal for ChatGPT and Claude conversations. The product name is a placeholder set by PUBLIC_APP_NAME in .env.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "build": "tsx scripts/build.ts",
+    "build:single": "tsx scripts/build.ts --single-file",
+    "start": "tsx scripts/serve.ts",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "node --import tsx --test --test-reporter=spec \"tests/unit/**/*.test.ts\" \"tests/unit/**/*.test.tsx\"",
+    "test:e2e": "playwright test",
+    "fixtures": "tsx scripts/make-fixture-exports.ts",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e"
+  },
+  "dependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "minisearch": "^7.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "esbuild": "0.27.7",
+    "eslint": "^10.1.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "tsx": "^4.21.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.70.1"
+  }
+}
