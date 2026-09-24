@@ -13,6 +13,8 @@ export interface AttachmentRef {
   name: string;
   mimeType: string | null;
   size: number | null;
+  /** Text content the export includes for the attachment (e.g. Claude's extracted/pasted text). */
+  extractedText?: string | null;
 }
 
 export interface ConversationRecord {
@@ -180,7 +182,7 @@ export interface ImportCounts {
   summaryFailed: number;
 }
 
-export type ImportStatus = 'running' | 'completed' | 'completed_with_errors' | 'cancelled' | 'failed';
+export type ImportStatus = 'running' | 'completed' | 'completed_with_errors' | 'cancelled' | 'failed' | 'interrupted';
 
 export interface ImportOptions {
   generateSummaries: boolean;

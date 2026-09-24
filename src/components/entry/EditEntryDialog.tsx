@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ensureCollection, saveEntryEdits, type EntryView } from '../../data/repositories/entries';
+import { ensureCollection, saveEntryEdits, type EditPatch, type EntryView } from '../../data/repositories/entries';
+import { normalizeWhitespace, uniqueTags } from '../../utils/text';
 import type { Collection, DerivedItem } from '../../data/types';
 import { randomId } from '../../utils/hash';
 import { Icon } from '../shared/Icon';
@@ -30,15 +31,18 @@ export function EditEntryDialog({ view, collections, open, onClose }: { view: En
     setSaving(true);
     setError(null);
     try {
+      // Send only what the user changed in this dialog; untouched fields keep following the
+      // generated values (so a later summary can still fill them).
+      const patch: EditPatch = {};
+      if (normalizeWhitespace(title) !== entry.title) patch.title = title;
+      if (normalizeWhitespace(subtitle) !== entry.subtitle) patch.subtitle = subtitle;
+      const tagList = tags.split(',').map((t) => t.trim()).filter(Boolean);
+      if (uniqueTags(tagList, 12).join('|') !== entry.tags.join('|')) patch.tags = tagList;
+      const stepTexts = steps.map((s) => normalizeWhitespace(s.text)).filter(Boolean);
+      if (stepTexts.join('|') !== entry.nextSteps.map((s) => s.text).join('|')) patch.nextSteps = steps;
       const collectionName = collection.trim();
-      const collectionId = collectionName ? await ensureCollection(collectionName) : null;
-      await saveEntryEdits(entry.id, {
-        title,
-        subtitle,
-        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-        nextSteps: steps,
-        collectionId,
-      });
+      if (collectionName !== (view.collection?.name ?? '')) patch.collectionId = collectionName ? await ensureCollection(collectionName) : null;
+      if (Object.keys(patch).length > 0) await saveEntryEdits(entry.id, patch);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

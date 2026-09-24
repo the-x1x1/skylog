@@ -3,6 +3,7 @@ import { getDb, getStorageMode, type StorageMode } from '../../data/db/database'
 import { useLiveQuery } from '../../data/hooks';
 import { listCollections, listEntries } from '../../data/repositories/entries';
 import type { Collection, EffectiveEntry } from '../../data/types';
+import { recoverInterruptedWork } from '../../data/recovery';
 import { warmSearchWhenIdle } from '../../search/client';
 
 interface AppData {
@@ -22,7 +23,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [storageMode, setStorageMode] = useState<StorageMode>('persistent');
 
   useEffect(() => {
-    getDb().then(
+    getDb()
+      .then(() => recoverInterruptedWork().catch((err) => console.warn('Recovery check failed', err)))
+      .then(
       () => {
         setStorageMode(getStorageMode());
         setReady(true);

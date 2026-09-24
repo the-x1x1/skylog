@@ -4,6 +4,8 @@ import { ensureCollectionInTx, getEntryView, type EntryView } from '../data/repo
 import { getSetting, setSetting } from '../data/repositories/settings';
 import type { DerivedItem, ExtractedList, JournalEntry } from '../data/types';
 import type { EntrySummarizer } from '../importers/core/pipeline';
+import { hasGeneratedSummary } from '../importers/core/prepare';
+import { summaryLockName, withLock } from '../utils/locks';
 import { OllamaClient, LocalServerClient } from './clients';
 import { LlmSummaryProvider } from './llm-provider';
 import type { JournalSummary, LlmClient, SummaryInput, SummaryProvider, SummaryProviderConfig } from './types';
@@ -48,7 +50,15 @@ export function buildSummaryInput(view: EntryView, autoTag: boolean): SummaryInp
     source: view.derived.source,
     sourceTitle: view.conversation?.title ?? '',
     autoTag,
-    messages: view.messages.map((m) => ({ id: m.id, index: m.index, role: m.role, authorName: m.authorName, text: m.text, createdAt: m.createdAt })),
+    messages: view.messages.map((m) => ({
+      id: m.id,
+      index: m.index,
+      role: m.role,
+      authorName: m.authorName,
+      // Pasted/attached text is part of what the user said; include a bounded excerpt.
+      text: [m.text, ...m.attachments.filter((a) => a.extractedText).map((a) => `[Attached: ${a.name}]\n${a.extractedText!.slice(0, 3000)}`)].filter(Boolean).join('\n\n'),
+      createdAt: m.createdAt,
+    })),
     images: view.images.map((i) => ({ id: i.id, messageId: i.messageId, title: i.title, prompt: i.prompt })),
   };
 }
@@ -110,21 +120,32 @@ async function setStatus(entryId: string, patch: Pick<JournalEntry, 'summaryStat
 
 /**
  * Summarizes one stored entry. On failure the entry is marked failed with a readable error and
- * the error is rethrown; the conversation itself is never modified or hidden.
+ * the error is rethrown; the conversation itself is never modified or hidden. If cancelled, the
+ * entry returns to exactly the state it had before. A Web Lock marks the summary as in progress
+ * so a reload can tell an interrupted summary from a running one.
  */
-export async function summarizeEntry(entryId: string, provider: SummaryProvider, opts: { signal?: AbortSignal; autoTag: boolean }): Promise<void> {
-  const view = await getEntryView(entryId);
-  if (!view) throw new Error('Entry not found.');
-  await setStatus(entryId, { summaryStatus: 'pending', summaryError: null });
-  try {
-    const summary = await provider.summarize(buildSummaryInput(view, opts.autoTag), opts.signal);
-    await applySummary(entryId, summary, provider.label, { autoTag: opts.autoTag });
-  } catch (err) {
-    const aborted = opts.signal?.aborted || (err as Error)?.name === 'AbortError';
-    const previous = view.derived.summaryStatus === 'complete' ? 'complete' : 'not_configured';
-    await setStatus(entryId, aborted ? { summaryStatus: previous, summaryError: null } : { summaryStatus: 'failed', summaryError: err instanceof Error ? err.message : String(err) });
-    throw err;
-  }
+export function summarizeEntry(entryId: string, provider: SummaryProvider, opts: { signal?: AbortSignal; autoTag: boolean }): Promise<void> {
+  return withLock(summaryLockName(entryId), async () => {
+    const view = await getEntryView(entryId);
+    if (!view) throw new Error('Entry not found.');
+    const before = view.derived;
+    const previousStatus: JournalEntry['summaryStatus'] =
+      before.summaryStatus === 'pending' ? (hasGeneratedSummary(before) ? 'complete' : 'not_configured') : before.summaryStatus;
+    await setStatus(entryId, { summaryStatus: 'pending', summaryError: null });
+    try {
+      const summary = await provider.summarize(buildSummaryInput(view, opts.autoTag), opts.signal);
+      await applySummary(entryId, summary, provider.label, { autoTag: opts.autoTag });
+    } catch (err) {
+      const aborted = opts.signal?.aborted || (err as Error)?.name === 'AbortError';
+      await setStatus(
+        entryId,
+        aborted
+          ? { summaryStatus: previousStatus, summaryError: before.summaryError }
+          : { summaryStatus: 'failed', summaryError: err instanceof Error ? err.message : String(err) },
+      );
+      throw err;
+    }
+  });
 }
 
 export function makeEntrySummarizer(provider: SummaryProvider): EntrySummarizer {

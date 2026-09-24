@@ -1,8 +1,7 @@
-import { notifyChange } from '../../data/db/changes';
-import { getDb } from '../../data/db/database';
 import { saveImportBatch } from '../../data/repositories/imports';
-import { emptyCounts, type ImportBatch, type ImportIssue, type ImportOptions, type JournalEntry } from '../../data/types';
+import { emptyCounts, type ImportBatch, type ImportIssue, type ImportOptions } from '../../data/types';
 import { randomId } from '../../utils/hash';
+import { importLockName, withLock } from '../../utils/locks';
 import { persistPrepared, prepareConversation } from './prepare';
 import type { ArchiveManifest, ConversationImporter, ImportProgress } from './types';
 
@@ -29,11 +28,17 @@ const PROGRESS_INTERVAL_MS = 100;
  * Runs a full import: parse → persist (one conversation per transaction, so a failure or cancel
  * never loses conversations already saved) → optional summaries. Progress reflects real work.
  */
-export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
+export function runImport(args: RunImportArgs): Promise<ImportBatch> {
+  const batchId = args.batchId ?? randomId('imp');
+  // The lock tells other tabs (and the next startup) that this import is alive.
+  return withLock(importLockName(batchId), () => runImportLocked({ ...args, batchId }));
+}
+
+async function runImportLocked(args: RunImportArgs & { batchId: string }): Promise<ImportBatch> {
   const { manifest, importer, options, signal, onProgress } = args;
   const summarizer = options.generateSummaries ? (args.summarizer ?? null) : null;
   const batch: ImportBatch = {
-    id: args.batchId ?? randomId('imp'),
+    id: args.batchId,
     archiveFileName: manifest.fileName,
     archiveSize: manifest.size,
     source: importer.source,
@@ -88,6 +93,7 @@ export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
 
   const toSummarize: string[] = [];
   const touchedEntries = new Set<string>();
+  const labels = new Map<string, { conversationId: string; title: string | null }>();
   const importedAt = batch.startedAt;
 
   try {
@@ -115,21 +121,20 @@ export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
           importImages: options.importImages,
           isSample: args.isSample,
         });
-        const result = await persistPrepared(prepared, { skipExisting: options.skipExisting, markPending: !!summarizer });
-        if (result.outcome === 'skipped') {
-          counts.duplicates++;
-        } else {
-          if (result.outcome === 'imported') counts.imported++;
-          else counts.updated++;
+        const result = await persistPrepared(prepared, { skipExisting: options.skipExisting });
+        const label = { conversationId: conv.sourceConversationId, title: conv.title || null };
+        if (result.note) addIssue({ level: 'warning', sourceFile: manifest.fileName, ...label, reason: result.note });
+        if (result.outcome === 'duplicate' || result.outcome === 'older' || result.outcome === 'unchanged') counts.duplicates++;
+        else if (result.outcome === 'imported') counts.imported++;
+        else counts.updated++;
+        if (result.outcome !== 'duplicate' && result.outcome !== 'older') {
           counts.imagesFound += prepared.images.length;
-          const stored = prepared.images.filter((i) => i.available).length;
-          counts.imagesStored += stored;
-          counts.imagesMissing += prepared.images.length - stored;
+          counts.imagesStored += result.imagesAvailable;
+          counts.imagesMissing += prepared.images.length - result.imagesAvailable;
           touchedEntries.add(result.entryId);
+          labels.set(result.entryId, label);
           if (result.needsSummary) toSummarize.push(result.entryId);
-          for (const w of prepared.warnings) {
-            addIssue({ level: 'warning', sourceFile: manifest.fileName, conversationId: conv.sourceConversationId, title: conv.title || null, reason: w });
-          }
+          for (const w of prepared.warnings) addIssue({ level: 'warning', sourceFile: manifest.fileName, ...label, reason: w });
         }
       } catch (err) {
         counts.failed++;
@@ -172,8 +177,8 @@ export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
         addIssue({
           level: 'warning',
           sourceFile: manifest.fileName,
-          conversationId: entryId.replace(/^entry:[^:]+:/, ''),
-          title: null,
+          conversationId: labels.get(entryId)?.conversationId ?? null,
+          title: labels.get(entryId)?.title ?? null,
           reason: `Summary failed (the conversation was imported): ${err instanceof Error ? err.message : String(err)}`,
         });
       }
@@ -182,28 +187,9 @@ export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
     }
   }
 
-  // Entries still marked pending (cancelled before their turn) go back to "not generated".
-  if (summarizer) await resetPending(toSummarize);
-
   batch.finishedAt = new Date().toISOString();
   batch.status = signal?.aborted ? 'cancelled' : counts.failed > 0 || counts.summaryFailed > 0 ? 'completed_with_errors' : 'completed';
   await saveImportBatch(batch);
   emit(signal?.aborted ? 'cancelled' : 'done');
   return batch;
-}
-
-async function resetPending(entryIds: string[]): Promise<void> {
-  if (entryIds.length === 0) return;
-  const db = await getDb();
-  const changed: string[] = [];
-  await db.write('entries', async (tx) => {
-    for (const id of entryIds) {
-      const e = await tx.get<JournalEntry>('entries', id);
-      if (e && e.summaryStatus === 'pending') {
-        await tx.put('entries', { ...e, summaryStatus: 'not_configured' });
-        changed.push(e.conversationId);
-      }
-    }
-  });
-  if (changed.length) notifyChange({ stores: ['entries'], conversationIds: changed });
 }

@@ -7,8 +7,6 @@ import fs from 'node:fs';
 import { PNG_1PX } from '../tests/helpers/fixtures';
 import { createZip } from './lib/zip-writer';
 
-const count = Number(process.argv[2] ?? 1500);
-const out = process.argv[3] ?? 'large-chatgpt-export.zip';
 const WORDS = 'walnut pyramid garden trellis sourdough starter lighthouse acrylic budget spreadsheet travel itinerary kyoto recipe bracket shelf cedar soil compost battery solar panel inverter guitar chord melody python script database index migration schema invoice client proposal marathon training interval tempo recovery'.split(' ');
 
 let seed = 42;
@@ -19,9 +17,11 @@ const rand = () => {
 const pick = () => WORDS[Math.floor(rand() * WORDS.length)]!;
 const sentence = (n: number) => Array.from({ length: n }, pick).join(' ');
 
+export function buildLargeExport(count: number): Record<string, string | Uint8Array> {
 const files: Record<string, string | Uint8Array> = {};
 const conversations = [];
 const t0 = Date.UTC(2024, 0, 1) / 1000;
+seed = 42;
 
 for (let c = 0; c < count; c++) {
   const id = `perf-${c}`;
@@ -54,6 +54,14 @@ for (let c = 0; c < count; c++) {
 
 files['conversations.json'] = JSON.stringify(conversations);
 files['chat.html'] = '<html></html>';
-const zip = await createZip(files);
-fs.writeFileSync(out, zip);
-console.log(`${count} conversations, ${(files['conversations.json'] as string).length.toLocaleString()} bytes of JSON, ${Object.keys(files).length - 2} images → ${out} (${zip.length.toLocaleString()} bytes zipped)`);
+return files;
+}
+
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '')) {
+  const count = Number(process.argv[2] ?? 1500);
+  const out = process.argv[3] ?? 'large-chatgpt-export.zip';
+  const files = buildLargeExport(count);
+  const zip = await createZip(files);
+  fs.writeFileSync(out, zip);
+  console.log(`${count} conversations, ${(files['conversations.json'] as string).length.toLocaleString()} bytes of JSON, ${Object.keys(files).length - 2} images → ${out} (${zip.length.toLocaleString()} bytes zipped)`);
+}

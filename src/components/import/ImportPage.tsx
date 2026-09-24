@@ -1,25 +1,15 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useImport, type ImportStep } from '../../app/providers/import';
 import { href, navigate, withQuery } from '../../app/router';
 import { useDocumentTitle } from '../../app/useDocumentTitle';
-import type { ImportBatch, ImportOptions, Source } from '../../data/types';
-import type { DetectionResult } from '../../importers/core/detect';
-import type { ImportPreview, ImportProgress } from '../../importers/core/types';
-import { createImportSession, type ImportSession } from '../../importers/worker/client';
+import type { ImportBatch } from '../../data/types';
+import type { ImportProgress } from '../../importers/core/types';
 import { createProvider } from '../../summarization/service';
 import { useSummaryConfig } from '../../summarization/useSummaryConfig';
 import { formatDate } from '../../utils/dates';
 import { formatBytes, pluralize } from '../../utils/text';
 import { Icon } from '../shared/Icon';
 import { Button, Notice, ProgressBar, SourceBadge, Spinner } from '../shared/ui';
-
-type Step =
-  | { kind: 'choose'; error?: string }
-  | { kind: 'opening'; fileName: string }
-  | { kind: 'pick-source'; fileName: string; detection: DetectionResult }
-  | { kind: 'previewing'; fileName: string }
-  | { kind: 'preview'; preview: ImportPreview; ambiguous: boolean }
-  | { kind: 'running'; preview: ImportPreview; progress: ImportProgress | null; cancelling: boolean }
-  | { kind: 'done'; batch: ImportBatch };
 
 function DropZone({ onFile, error }: { onFile: (f: File) => void; error?: string }) {
   const [over, setOver] = useState(false);
@@ -99,66 +89,25 @@ function Stat({ label, value, tone, small }: { label: string; value: number | st
 
 export function ImportPage() {
   useDocumentTitle('Import');
-  const [step, setStep] = useState<Step>({ kind: 'choose' });
-  const sessionRef = useRef<ImportSession | null>(null);
+  const { step, options, setOptions, openFile: onFile, chooseSource: choose, start, cancel, reset } = useImport();
   const { config } = useSummaryConfig();
   const providerReady = createProvider(config) !== null;
-  const [options, setOptions] = useState<ImportOptions>({ generateSummaries: false, importImages: true, skipExisting: true, autoTag: true });
 
   useEffect(() => {
-    setOptions((o) => ({ ...o, generateSummaries: providerReady ? o.generateSummaries : false }));
-  }, [providerReady]);
+    if (!providerReady && options.generateSummaries) setOptions({ ...options, generateSummaries: false });
+  }, [providerReady, options, setOptions]);
 
+  // A finished import's summary is shown once (even if it finished while you were elsewhere);
+  // after you've seen it, leaving the page starts the next visit fresh.
+  const stepRef = useRef(step);
+  stepRef.current = step;
   useEffect(
     () => () => {
-      sessionRef.current?.dispose();
+      const k = stepRef.current.kind;
+      if (k === 'done' || (k === 'choose' && stepRef.current.error)) reset();
     },
-    [],
+    [reset],
   );
-
-  const session = () => {
-    if (!sessionRef.current) sessionRef.current = createImportSession();
-    return sessionRef.current;
-  };
-
-  const reset = (error?: string) => {
-    sessionRef.current?.dispose();
-    sessionRef.current = null;
-    setStep({ kind: 'choose', error });
-  };
-
-  const onFile = async (file: File) => {
-    setStep({ kind: 'opening', fileName: file.name });
-    try {
-      const { detection, preview } = await session().open(file);
-      if (preview && !detection.ambiguous) setStep({ kind: 'preview', preview, ambiguous: false });
-      else setStep({ kind: 'pick-source', fileName: file.name, detection });
-    } catch (err) {
-      reset(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const choose = async (source: Source, fileName: string) => {
-    setStep({ kind: 'previewing', fileName });
-    try {
-      const preview = await session().preview(source);
-      setStep({ kind: 'preview', preview, ambiguous: true });
-    } catch (err) {
-      reset(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const start = async (preview: ImportPreview) => {
-    setStep({ kind: 'running', preview, progress: null, cancelling: false });
-    try {
-      const batch = await session().start({ source: preview.source, options, summaryConfig: config }, (progress) =>
-        setStep((s) => (s.kind === 'running' ? { ...s, progress } : s)),
-      );
-      setStep({ kind: 'done', batch });
-    } catch (err) {
-      reset(err instanceof Error ? err.message : String(err));
-    }
-  };
 
   return (
     <div className="page page--narrow import-page">
@@ -285,17 +234,14 @@ export function ImportPage() {
         </div>
       ) : null}
 
-      {step.kind === 'running' ? <Running step={step} onCancel={() => {
-        setStep({ ...step, cancelling: true });
-        session().cancel();
-      }} /> : null}
+      {step.kind === 'running' ? <Running step={step} onCancel={cancel} /> : null}
 
       {step.kind === 'done' ? <Done batch={step.batch} onAnother={() => reset()} /> : null}
     </div>
   );
 }
 
-function Running({ step, onCancel }: { step: Extract<Step, { kind: 'running' }>; onCancel: () => void }) {
+function Running({ step, onCancel }: { step: Extract<ImportStep, { kind: 'running' }>; onCancel: () => void }) {
   const p = step.progress;
   const c = p?.counts;
   const summarizing = p?.stage === 'summarizing';
@@ -340,7 +286,7 @@ function Running({ step, onCancel }: { step: Extract<Step, { kind: 'running' }>;
           {step.cancelling ? 'Stopping after the current conversation…' : 'Cancel'}
         </Button>
       </div>
-      <p className="muted small">Cancelling keeps every conversation already saved.</p>
+      <p className="muted small">Cancelling keeps every conversation already saved. You can browse your journal while this runs.</p>
     </div>
   );
 }

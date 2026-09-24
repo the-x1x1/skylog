@@ -7,6 +7,7 @@ import { SearchPage } from '../components/search/SearchPage';
 import { SettingsPage } from '../components/settings/SettingsPage';
 import { href, matchPath, useLocation } from './router';
 import { DataProvider, useAppData } from './providers/data';
+import { ImportProvider } from './providers/import';
 import { ThemeProvider } from './providers/theme';
 
 function Routes() {
@@ -44,9 +45,11 @@ export function App() {
   return (
     <ThemeProvider>
       <DataProvider>
-        <AppShell>
-          <Routes />
-        </AppShell>
+        <ImportProvider>
+          <AppShell>
+            <Routes />
+          </AppShell>
+        </ImportProvider>
       </DataProvider>
     </ThemeProvider>
   );

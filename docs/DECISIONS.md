@@ -19,7 +19,7 @@ The build environment had no access to the npm registry, so Vite, Vitest, Dexie,
 `src/data/db/idb.ts` (~250 lines) provides versioned migrations, promise-based transactions, and change notifications over `BroadcastChannel` (so a worker's writes update the UI live). It is small enough to own and is covered by schema/migration tests. The repository layer (`src/data/repositories`) is the only code that touches it.
 
 ## D4 — Hand-written ZIP reader instead of JSZip
-`src/importers/core/zip.ts` reads the central directory and decompresses single entries on demand with the platform `DecompressionStream`, reading the archive through `Blob.slice`. Multi-gigabyte exports are never loaded whole; only `conversations.json` must fit in memory (limit 768 MB, with a clear error). Supports stored/deflated entries, UTF-8 names and ZIP64.
+`src/importers/core/zip.ts` reads the central directory and decompresses single entries on demand with the platform `DecompressionStream`, reading the archive through `Blob.slice`. Multi-gigabyte exports are never loaded whole; only `conversations.json` must fit in memory (limit 500 MB — the browser string-length ceiling — with a clear error). Supports stored/deflated entries, UTF-8 names and ZIP64.
 
 ## D5 — MiniSearch for local search, in a worker
 Entries, image titles/prompts and every message are indexed in a Web Worker (`src/search/search.worker.ts`) that re-indexes only the conversations a change touched. Typos (edit distance 1–2 by word length) and prefixes match. Snippet text for message hits is loaded from IndexedDB rather than stored in the index, to halve memory on large journals.

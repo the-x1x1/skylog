@@ -169,7 +169,9 @@ export function parseClaudeConversation(raw: unknown, fileIndex: Map<string, str
               let content: string | null = null;
               if (command === 'update' && prev) {
                 const oldStr = s(input.old_str);
-                content = oldStr && prev.content.includes(oldStr) ? prev.content.replace(oldStr, s(input.new_str)) : null;
+                const newStr = s(input.new_str);
+                // Function replacer: "$&", "$$" etc. in the new text must stay literal.
+                content = oldStr && prev.content.includes(oldStr) ? prev.content.replace(oldStr, () => newStr) : null;
                 if (content === null) warnings.push(`Could not apply an update to artifact "${prev.title}".`);
               } else if (typeof input.content === 'string') {
                 content = input.content;
@@ -281,7 +283,15 @@ export function parseClaudeConversation(raw: unknown, fileIndex: Map<string, str
     }
     for (const a of Array.isArray(msg.attachments) ? msg.attachments : []) {
       if (!a || typeof a !== 'object') continue;
-      attachments.push({ name: s(a.file_name) || 'attachment', mimeType: s(a.file_type) || null, size: typeof a.file_size === 'number' ? a.file_size : null });
+      // extracted_content holds pasted long text and the text of uploaded documents: it is
+      // part of what the user sent, so keep it (shown with the message and searchable).
+      const extracted = s(a.extracted_content);
+      attachments.push({
+        name: s(a.file_name) || (extracted ? 'Pasted text' : 'attachment'),
+        mimeType: s(a.file_type) || null,
+        size: typeof a.file_size === 'number' ? a.file_size : null,
+        extractedText: extracted || null,
+      });
     }
 
     const text = texts.join('\n\n');

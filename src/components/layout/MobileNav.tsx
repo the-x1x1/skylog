@@ -1,3 +1,4 @@
+import { useImport } from '../../app/providers/import';
 import { href, useLocation } from '../../app/router';
 import { Icon, type IconName } from '../shared/Icon';
 import { Logo } from '../shared/media';
@@ -11,6 +12,8 @@ const ITEMS: { to: string; label: string; icon: IconName; match: (p: string) => 
 
 export function MobileNav() {
   const { path } = useLocation();
+  const { step } = useImport();
+  const importing = step.kind === 'running';
   return (
     <nav className="mobile-nav" aria-label="Primary">
       {ITEMS.map((item) => {
@@ -18,7 +21,8 @@ export function MobileNav() {
         return (
           <a key={item.to} href={href(item.to)} className="mobile-nav__item" aria-current={active ? 'page' : undefined}>
             <Icon name={item.icon} size={22} />
-            <span>{item.label}</span>
+            <span>{item.to === '/import' && importing ? 'Importing…' : item.label}</span>
+            {item.to === '/import' && importing ? <span className="mobile-nav__dot" aria-hidden="true" /> : null}
           </a>
         );
       })}

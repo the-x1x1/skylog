@@ -38,7 +38,9 @@ interface Doc {
 
 type Hit = SearchResult & Doc;
 
-const MAX_INDEXED_MESSAGE_CHARS = 20_000;
+/** Long messages are indexed in slices so text beyond any single slice stays searchable. */
+const MESSAGE_SLICE_CHARS = 20_000;
+const SLICE_OVERLAP = 200;
 
 function createMiniSearch() {
   return new MiniSearch<Doc>({
@@ -122,24 +124,40 @@ export function buildDocs(entry: JournalEntry, edits: EntryEdits | undefined, im
     });
   }
   for (const m of messages) {
-    if (!m.text.trim()) continue;
-    docs.push({
-      ...base,
-      id: `m|${m.id}`,
-      kind: 'message',
-      messageId: m.id,
-      index: m.index,
-      role: m.role,
-      text: m.text.length > MAX_INDEXED_MESSAGE_CHARS ? m.text.slice(0, MAX_INDEXED_MESSAGE_CHARS) : m.text,
-    });
+    const full = messageSearchText(m);
+    if (!full.trim()) continue;
+    for (let start = 0, slice = 0; start < full.length; start += MESSAGE_SLICE_CHARS - SLICE_OVERLAP, slice++) {
+      docs.push({
+        ...base,
+        id: slice === 0 ? `m|${m.id}` : `m|${m.id}#${slice}`,
+        kind: 'message',
+        messageId: m.id,
+        index: m.index,
+        role: m.role,
+        text: full.slice(start, start + MESSAGE_SLICE_CHARS),
+      });
+      if (start + MESSAGE_SLICE_CHARS >= full.length) break;
+    }
   }
   return docs;
 }
 
+/** Message text plus any attached/pasted text the export included. */
+export function messageSearchText(m: Pick<MessageRecord, 'text' | 'attachments'>): string {
+  const extra = m.attachments.map((a) => a.extractedText ?? '').filter(Boolean);
+  return extra.length ? [m.text, ...extra].join('\n\n') : m.text;
+}
+
+/** Calendar day in the viewer's time zone (date filters are picked in local days). */
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function passesFilters(hit: Hit, f: SearchFilters): boolean {
   if (f.source && hit.source !== f.source) return false;
-  if (f.from && (!hit.date || hit.date.slice(0, 10) < f.from.slice(0, 10))) return false;
-  if (f.to && (!hit.date || hit.date.slice(0, 10) > f.to.slice(0, 10))) return false;
+  if (f.from && (!hit.date || localDay(hit.date) < f.from.slice(0, 10))) return false;
+  if (f.to && (!hit.date || localDay(hit.date) > f.to.slice(0, 10))) return false;
   if (f.tag && !(hit.tagList ?? []).includes(f.tag)) return false;
   if (f.collectionId && hit.collectionId !== f.collectionId) return false;
   return true;
@@ -210,7 +228,21 @@ export class SearchIndex {
 
   /** Re-indexes the given conversations (added, changed or deleted). */
   updateConversations(conversationIds: string[]): Promise<void> {
-    this.queue = this.queue.then(async () => {
+    // A failed update must never stall later ones: recover the chain, and fall back to a full
+    // rebuild so no conversation silently drops out of search.
+    this.queue = this.queue
+      .catch(() => undefined)
+      .then(() => this.applyUpdates(conversationIds))
+      .catch((err) => {
+        console.error('Search index update failed; rebuilding.', err);
+        this.ready = false;
+        return this.rebuild();
+      });
+    return this.queue;
+  }
+
+  private async applyUpdates(conversationIds: string[]): Promise<void> {
+    {
       if (this.building) await this.building;
       if (!this.ready) return;
       const db = await getDb();
@@ -234,8 +266,7 @@ export class SearchIndex {
         this.ms.addAll(docs);
         this.docIdsByConversation.set(conversationId, docs.map((d) => d.id));
       }
-    });
-    return this.queue;
+    }
   }
 
   async search(query: string, filters: SearchFilters = {}, limits = { entries: 20, images: 24, messages: 40 }): Promise<SearchResults> {
@@ -249,6 +280,7 @@ export class SearchIndex {
     const entries: EntryHit[] = [];
     const images: ImageHit[] = [];
     const messageHits: Hit[] = [];
+    const seenMessages = new Set<string>();
     for (const r of raw) {
       const terms = r.terms;
       if (r.kind === 'entry' && entries.length < limits.entries) {
@@ -279,7 +311,8 @@ export class SearchIndex {
           available: !!r.available,
           snippet: makeSnippet(firstMatching([r.prompt, r.imageTitle, r.filename], terms), terms, 80),
         });
-      } else if (r.kind === 'message') {
+      } else if (r.kind === 'message' && !seenMessages.has(r.messageId!)) {
+        seenMessages.add(r.messageId!);
         messageHits.push(r);
       }
     }
@@ -310,7 +343,7 @@ export class SearchIndex {
     await db.read('messages', async (tx) => {
       const recs = await Promise.all(ids.map((id) => tx.get<MessageRecord>('messages', id)));
       recs.forEach((m) => {
-        if (m) out.set(m.id, m.text);
+        if (m) out.set(m.id, messageSearchText(m));
       });
     });
     return out;

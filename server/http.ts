@@ -70,17 +70,33 @@ function sendJson(res: http.ServerResponse, status: number, data: unknown) {
   res.end(JSON.stringify(data));
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+function hostnameOf(hostHeader: string): string | null {
+  try {
+    return new URL(`http://${hostHeader}`).hostname;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The API is only for this app's own pages. Browsers always send Origin on cross-origin POSTs,
- * and the custom header forces a CORS preflight we never answer, so other websites cannot use a
- * locally configured API key.
+ * The API is only for this app's own pages:
+ * - the custom header forces a CORS preflight we never answer, so ordinary cross-site requests fail;
+ * - the Host must be a loopback name, which defeats DNS-rebinding (a hostile domain re-pointed
+ *   at 127.0.0.1 still sends its own name as Host);
+ * - when a browser sends Origin, it must be this same loopback host.
  */
 export function isTrustedApiRequest(req: http.IncomingMessage): boolean {
   if (req.headers['x-journal-client'] !== '1') return false;
+  const host = req.headers.host ?? '';
+  const hostname = hostnameOf(host);
+  if (!hostname || !LOOPBACK_HOSTS.has(hostname)) return false;
   const origin = req.headers.origin;
   if (!origin) return true;
   try {
-    return new URL(origin).host === req.headers.host;
+    const o = new URL(origin);
+    return o.host === host && LOOPBACK_HOSTS.has(o.hostname);
   } catch {
     return false;
   }

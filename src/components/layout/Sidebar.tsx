@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAppData } from '../../app/providers/data';
+import { useImport } from '../../app/providers/import';
 import { entryPath, href, navigate, useLocation, withQuery } from '../../app/router';
 import type { EffectiveEntry, Source } from '../../data/types';
 import { monthKey, monthLabel } from '../../utils/dates';
 import { Icon } from '../shared/Icon';
 import { Logo } from '../shared/media';
+import { ProgressBar } from '../shared/ui';
 import { ThemeToggle } from './ThemeToggle';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -41,6 +43,29 @@ function SidebarSearch() {
         {isMac ? '⌘K' : 'Ctrl K'}
       </kbd>
     </div>
+  );
+}
+
+/** Shown while an import runs in the background (the user may be on any page). */
+function ImportStatus() {
+  const { step } = useImport();
+  const loc = useLocation();
+  if (step.kind !== 'running' || loc.path === '/import') return null;
+  const p = step.progress;
+  const summarizing = p?.stage === 'summarizing';
+  const value = summarizing ? (p?.summaryDone ?? 0) : (p?.processed ?? 0);
+  const max = summarizing ? (p?.summaryTotal ?? 0) : p?.total || step.preview.conversationCount;
+  return (
+    <a className="import-status" href={href('/import')}>
+      <span className="import-status__label">
+        <span className="spinner" aria-hidden="true" />
+        {summarizing ? 'Writing summaries' : 'Importing'}
+        <span className="import-status__count">
+          {value.toLocaleString()} / {max.toLocaleString()}
+        </span>
+      </span>
+      <ProgressBar value={value} max={max} label="Import progress" />
+    </a>
   );
 }
 
@@ -127,6 +152,7 @@ export function Sidebar() {
           <Icon name="import" size={18} />
           <span>Import</span>
         </a>
+        <ImportStatus />
       </div>
 
       <nav className="sidebar__scroll" aria-label="Journal">

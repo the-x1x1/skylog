@@ -16,6 +16,7 @@ const STATUS: Record<ImportStatus, { label: string; tone: string }> = {
   completed_with_errors: { label: 'Completed with problems', tone: 'warn' },
   cancelled: { label: 'Cancelled', tone: 'warn' },
   failed: { label: 'Stopped', tone: 'error' },
+  interrupted: { label: 'Interrupted', tone: 'warn' },
 };
 
 function StatusPill({ status }: { status: ImportStatus }) {
@@ -116,7 +117,11 @@ export function ImportReportPage({ batchId }: { batchId: string }) {
         <SourceBadge source={batch.source} size="sm" /> · {formatBytes(batch.archiveSize)} · started {formatDateTime(batch.startedAt)}
         {batch.finishedAt ? ` · finished ${formatDateTime(batch.finishedAt)}` : ''}
       </p>
-      {batch.fatalError ? <Notice tone="error" title="The import stopped early">{batch.fatalError}</Notice> : null}
+      {batch.fatalError ? (
+        <Notice tone={batch.status === 'interrupted' ? 'warn' : 'error'} title={batch.status === 'interrupted' ? 'This import didn’t finish' : 'The import stopped early'}>
+          {batch.fatalError}
+        </Notice>
+      ) : null}
 
       <dl className="stats stats--wide">
         {[

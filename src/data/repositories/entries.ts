@@ -124,19 +124,32 @@ export async function saveEntryEdits(entryId: string, patch: EditPatch, clear: (
       if (s !== entry.subtitle) next.subtitle = s;
       else delete next.subtitle;
     }
-    if (patch.tags !== undefined) next.tags = uniqueTags(patch.tags, 12);
-    if (patch.nextSteps !== undefined) {
-      next.nextSteps = patch.nextSteps
-        .map((s) => ({ ...s, text: normalizeWhitespace(s.text) }))
-        .filter((s) => s.text.length > 0);
+    // Only differences from the generated values are stored, so a later summary can still fill
+    // fields the user never changed.
+    if (patch.tags !== undefined) {
+      const tags = uniqueTags(patch.tags, 12);
+      if (sameList(tags, entry.tags)) delete next.tags;
+      else next.tags = tags;
     }
-    if (patch.collectionId !== undefined) next.collectionId = patch.collectionId;
+    if (patch.nextSteps !== undefined) {
+      const steps = patch.nextSteps.map((s) => ({ ...s, text: normalizeWhitespace(s.text) })).filter((s) => s.text.length > 0);
+      if (sameList(steps.map((s) => s.text), entry.nextSteps.map((s) => s.text))) delete next.nextSteps;
+      else next.nextSteps = steps;
+    }
+    if (patch.collectionId !== undefined) {
+      if (patch.collectionId === entry.collectionId) delete next.collectionId;
+      else next.collectionId = patch.collectionId;
+    }
     for (const k of clear) delete next[k];
     const hasAny = (['title', 'subtitle', 'tags', 'nextSteps', 'collectionId'] as const).some((k) => next[k] !== undefined);
     if (hasAny) await tx.put('edits', next);
     else await tx.delete('edits', entryId);
   });
   notifyChange({ stores: ['edits'], conversationIds: [conversationId] });
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 export function collectionNameKey(name: string): string {
@@ -183,8 +196,11 @@ export async function deleteEntry(entryId: string): Promise<void> {
   if (conversationId) notifyChange({ stores: ['entries', 'conversations', 'messages', 'images'], conversationIds: [conversationId] });
 }
 
-/** Deletes messages, images and image blobs for a conversation (used by delete and re-import). */
-export async function deleteConversationSourceInTx(tx: Tx, conversationId: string): Promise<void> {
+/**
+ * Deletes messages, images and image blobs for a conversation (used by delete and re-import).
+ * Blobs listed in `keepBlobKeys` survive (a re-import that couldn't supply them reuses them).
+ */
+export async function deleteConversationSourceInTx(tx: Tx, conversationId: string, keepBlobKeys: ReadonlySet<string> = new Set()): Promise<void> {
   const [messageKeys, images] = await Promise.all([
     tx.getAllKeysFromIndex('messages', 'conversationId', conversationId),
     tx.getAllFromIndex<ImageAsset>('images', 'conversationId', conversationId),
@@ -194,7 +210,7 @@ export async function deleteConversationSourceInTx(tx: Tx, conversationId: strin
     'images',
     images.map((i) => i.id),
   );
-  const blobKeys = images.map((i) => i.blobKey).filter((k): k is string => !!k);
+  const blobKeys = images.map((i) => i.blobKey).filter((k): k is string => !!k && !keepBlobKeys.has(k));
   await tx.deleteAll('blobs', blobKeys);
 }
 

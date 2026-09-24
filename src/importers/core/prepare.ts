@@ -200,13 +200,17 @@ export async function prepareConversation(p: ParsedConversation, ctx: PrepareCon
   return { conversation, messages, images, blobs, baseEntry, warnings };
 }
 
-export type PersistOutcome = 'imported' | 'updated' | 'unchanged' | 'skipped';
+export type PersistOutcome = 'imported' | 'updated' | 'unchanged' | 'duplicate' | 'older';
 
 export interface PersistResult {
   outcome: PersistOutcome;
   entryId: string;
   /** Whether this entry should (re)generate its summary. */
   needsSummary: boolean;
+  /** Images with a stored file after this write (including ones kept from an earlier import). */
+  imagesAvailable: number;
+  /** Something the import report should mention about this conversation. */
+  note: string | null;
 }
 
 const DERIVED_FIELDS = [
@@ -229,58 +233,110 @@ function keepValidRefs(items: DerivedItem[], valid: Set<string>): DerivedItem[] 
   return items.map((it) => ({ ...it, sourceMessageIds: it.sourceMessageIds.filter((id) => valid.has(id)) }));
 }
 
+/** The latest activity we know of for a conversation. */
+function lastActivity(c: Pick<ConversationRecord, 'lastMessageAt' | 'updatedAt'>): string | null {
+  return c.lastMessageAt ?? c.updatedAt ?? null;
+}
+
+/** An entry "has a summary" once one was ever generated, whatever its current status. */
+export function hasGeneratedSummary(e: Pick<JournalEntry, 'summaryGeneratedAt' | 'summaryStatus'>): boolean {
+  return !!e.summaryGeneratedAt || e.summaryStatus === 'complete';
+}
+
 /**
- * Writes one conversation and its entry atomically. Re-importing the same revision is a no-op
- * when `skipExisting` is on, and otherwise rewrites identical data (idempotent). Derived summary
- * content is preserved across updates and flagged outdated when the conversation changed;
- * user edits live in a separate store and are never touched here.
+ * Writes one conversation and its entry atomically.
+ * - Unchanged conversations are skipped when `skipExisting` is on (idempotent otherwise).
+ * - An older copy of a conversation never replaces a newer one.
+ * - Stored images are kept when this import can't supply them (image import off, file missing),
+ *   and missing images are filled in when this export has them.
+ * - A generated summary is preserved (and flagged outdated if the conversation changed).
+ * - User edits live in a separate store and are never touched here.
  */
-export async function persistPrepared(
-  prepared: PreparedConversation,
-  opts: { skipExisting: boolean; markPending: boolean },
-): Promise<PersistResult> {
+export async function persistPrepared(prepared: PreparedConversation, opts: { skipExisting: boolean }): Promise<PersistResult> {
   const db = await getDb();
   const { conversation, baseEntry } = prepared;
-  const result = await db.write(['conversations', 'messages', 'images', 'blobs', 'entries'], async (tx): Promise<PersistResult> => {
-    const existing = await tx.get<ConversationRecord>('conversations', conversation.id);
-    const sameRevision = !!existing && existing.revision === conversation.revision;
-    if (existing && sameRevision && opts.skipExisting) {
-      return { outcome: 'skipped', entryId: baseEntry.id, needsSummary: false };
-    }
-    if (existing) await deleteConversationSourceInTx(tx, conversation.id);
+  const result = await db.write(
+    ['conversations', 'messages', 'images', 'blobs', 'entries'],
+    async (tx): Promise<PersistResult> => {
+      const existing = await tx.get<ConversationRecord>('conversations', conversation.id);
+      const oldImages = existing ? await tx.getAllFromIndex<ImageAsset>('images', 'conversationId', conversation.id) : [];
+      const oldById = new Map(oldImages.map((i) => [i.id, i]));
+      const sameRevision = !!existing && existing.revision === conversation.revision;
+      const skip = (outcome: 'duplicate' | 'older', note: string | null = null): PersistResult => ({
+        outcome,
+        entryId: baseEntry.id,
+        needsSummary: false,
+        imagesAvailable: 0,
+        note,
+      });
 
-    await tx.put('conversations', conversation);
-    await tx.putAll('messages', prepared.messages);
-    await tx.putAll('images', prepared.images);
-    await tx.putAll('blobs', prepared.blobs);
-
-    const prev = await tx.get<JournalEntry>('entries', baseEntry.id);
-    let entry: JournalEntry = { ...baseEntry };
-    if (prev) {
-      const valid = new Set(prepared.messages.map((m) => m.id));
-      const keep: Partial<JournalEntry> = { collectionId: prev.collectionId, tags: prev.tags };
-      if (prev.summaryStatus === 'complete') {
-        for (const k of DERIVED_FIELDS) (keep as Record<string, unknown>)[k] = prev[k];
-        keep.keyDecisions = keepValidRefs(prev.keyDecisions, valid);
-        keep.nextSteps = keepValidRefs(prev.nextSteps, valid);
-        keep.extractedLists = prev.extractedLists.map((l) => ({
-          ...l,
-          rows: l.rows.map((r) => ({ ...r, sourceMessageIds: r.sourceMessageIds.filter((id) => valid.has(id)) })),
-        }));
-        keep.highlightMessageIds = prev.highlightMessageIds.filter((id) => valid.has(id));
+      if (existing && !sameRevision) {
+        const incoming = lastActivity(conversation);
+        const current = lastActivity(existing);
+        const older = !!incoming && !!current && incoming < current;
+        const fewer = incoming === current && conversation.messageCount < existing.messageCount;
+        if (older || fewer) {
+          return skip('older', `Skipped an older copy of this conversation; the journal already has a newer version${current ? ` (last activity ${current.slice(0, 10)})` : ''}.`);
+        }
       }
-      entry = {
-        ...entry,
-        ...keep,
-        summaryOutdated: prev.summaryStatus === 'complete' && !sameRevision ? true : prev.summaryOutdated && sameRevision,
+
+      const keepBlobs = new Set<string>();
+      const images = prepared.images.map((img): ImageAsset => {
+        if (img.available) return img;
+        const old = oldById.get(img.id);
+        if (!old?.available || !old.blobKey) return img;
+        keepBlobs.add(old.blobKey);
+        return { ...img, available: true, blobKey: old.blobKey, mimeType: old.mimeType, byteSize: old.byteSize, unavailableReason: null };
+      });
+      const fillsMissing = prepared.images.some((i) => i.available && !oldById.get(i.id)?.available);
+      if (existing && sameRevision && opts.skipExisting && !fillsMissing) return skip('duplicate');
+
+      if (existing) await deleteConversationSourceInTx(tx, conversation.id, keepBlobs);
+      await tx.put('conversations', conversation);
+      await tx.putAll('messages', prepared.messages);
+      await tx.putAll('images', images);
+      await tx.putAll('blobs', prepared.blobs);
+
+      const available = images.filter((i) => i.available);
+      const prev = await tx.get<JournalEntry>('entries', baseEntry.id);
+      let entry: JournalEntry = { ...baseEntry, coverImageId: available[0]?.id ?? null, availableImageCount: available.length };
+      const summarized = !!prev && hasGeneratedSummary(prev);
+      if (prev) {
+        const valid = new Set(prepared.messages.map((m) => m.id));
+        const keep: Partial<JournalEntry> = { collectionId: prev.collectionId, tags: prev.tags };
+        if (summarized) {
+          for (const k of DERIVED_FIELDS) (keep as Record<string, unknown>)[k] = prev[k];
+          keep.keyDecisions = keepValidRefs(prev.keyDecisions, valid);
+          keep.nextSteps = keepValidRefs(prev.nextSteps, valid);
+          keep.extractedLists = prev.extractedLists.map((l) => ({
+            ...l,
+            rows: l.rows.map((r) => ({ ...r, sourceMessageIds: r.sourceMessageIds.filter((id) => valid.has(id)) })),
+          }));
+          keep.highlightMessageIds = prev.highlightMessageIds.filter((id) => valid.has(id));
+          if (prev.summaryStatus === 'pending') keep.summaryStatus = 'complete';
+        } else if (prev.summaryStatus === 'failed') {
+          keep.summaryStatus = 'failed';
+          keep.summaryError = prev.summaryError;
+        }
+        entry = {
+          ...entry,
+          ...keep,
+          importedAt: sameRevision ? prev.importedAt : entry.importedAt,
+          summaryOutdated: summarized && (!sameRevision || prev.summaryOutdated),
+        };
+      }
+      await tx.put('entries', entry);
+      return {
+        outcome: !existing ? 'imported' : sameRevision && !fillsMissing ? 'unchanged' : 'updated',
+        entryId: baseEntry.id,
+        needsSummary: !prev || !sameRevision || !summarized,
+        imagesAvailable: available.length,
+        note: null,
       };
-    }
-    const needsSummary = !prev || !sameRevision || prev.summaryStatus !== 'complete';
-    if (opts.markPending && needsSummary) entry = { ...entry, summaryStatus: 'pending', summaryError: null };
-    await tx.put('entries', entry);
-    return { outcome: !existing ? 'imported' : sameRevision ? 'unchanged' : 'updated', entryId: baseEntry.id, needsSummary };
-  }, { durability: 'relaxed' });
-  if (result.outcome !== 'skipped') {
+    },
+    { durability: 'relaxed' },
+  );
+  if (result.outcome !== 'duplicate' && result.outcome !== 'older') {
     notifyChange({ stores: ['conversations', 'messages', 'images', 'entries'], conversationIds: [conversation.id] });
   }
   return result;

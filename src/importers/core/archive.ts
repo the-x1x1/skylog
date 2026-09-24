@@ -4,8 +4,11 @@ import { ZipError, ZipReader, type ZipEntry } from './zip';
 export const LIMITS = {
   /** Largest archive accepted. Entries are read lazily, so this is about sanity, not memory. */
   maxArchiveBytes: 20 * 1024 ** 3,
-  /** Largest JSON file parsed in one piece (conversations.json must fit in memory as text). */
-  maxJsonBytes: 768 * 1024 ** 2,
+  /**
+   * Largest JSON file parsed in one piece. conversations.json must fit in one JavaScript string,
+   * and browsers cap strings at roughly 512 million characters.
+   */
+  maxJsonBytes: 500 * 1024 ** 2,
   /** Larger images are recorded but not stored. */
   maxImageBytes: 60 * 1024 ** 2,
   sniffBytes: 64 * 1024,

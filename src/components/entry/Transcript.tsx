@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ImageAsset, MessageRecord, Source } from '../../data/types';
 import { speakerName } from '../../export/entry-export';
+import { messageSearchText } from '../../search/engine';
 import { highlight } from '../../search/snippet';
 import { formatDateTime } from '../../utils/dates';
 import { formatBytes } from '../../utils/text';
@@ -126,17 +127,31 @@ const Message = memo(function Message({
           ))}
         </div>
       ) : null}
-      {message.attachments.length > 0 ? (
+      {message.attachments.some((a) => !a.extractedText) ? (
         <ul className="msg__files" aria-label="Attachments">
-          {message.attachments.map((a, i) => (
-            <li key={i}>
-              <Icon name="file" size={14} />
-              {a.name}
-              {a.size ? <span className="msg__file-size">{formatBytes(a.size)}</span> : null}
-            </li>
-          ))}
+          {message.attachments
+            .filter((a) => !a.extractedText)
+            .map((a, i) => (
+              <li key={i}>
+                <Icon name="file" size={14} />
+                {a.name}
+                {a.size ? <span className="msg__file-size">{formatBytes(a.size)}</span> : null}
+              </li>
+            ))}
         </ul>
       ) : null}
+      {message.attachments
+        .filter((a) => a.extractedText)
+        .map((a, i) => (
+          <details key={`x${i}`} className="msg__attachment" open={!!find && a.extractedText!.toLowerCase().includes(find.toLowerCase())}>
+            <summary>
+              <Icon name="file" size={14} />
+              {a.name}
+              <span className="msg__file-size">{a.extractedText!.length.toLocaleString()} characters</span>
+            </summary>
+            <pre className="msg__attachment-text">{find ? <Highlighted segments={highlightLoose(a.extractedText!, find.trim())} /> : a.extractedText}</pre>
+          </details>
+        ))}
     </li>
   );
 });
@@ -161,7 +176,7 @@ export function Transcript({ messages, images, source, open, onToggle, onShowIma
   const matches = useMemo(() => {
     const n = find.trim().toLowerCase();
     if (n.length < 2) return [];
-    return messages.filter((m) => m.text.toLowerCase().includes(n)).map((m) => m.id);
+    return messages.filter((m) => messageSearchText(m).toLowerCase().includes(n)).map((m) => m.id);
   }, [find, messages]);
 
   const matchSet = useMemo(() => new Set(matches), [matches]);

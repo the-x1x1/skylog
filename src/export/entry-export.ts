@@ -94,6 +94,9 @@ export function entryToMarkdown(view: EntryView, now = new Date()): string {
     out.push(m.text || '_(no text)_');
     if (m.imageIds.length) out.push('', `_${m.imageIds.length} image${m.imageIds.length > 1 ? 's' : ''} attached._`);
     if (m.attachments.length) out.push('', `_Attachments: ${m.attachments.map((a) => a.name).join(', ')}_`);
+    for (const a of m.attachments) {
+      if (a.extractedText) out.push('', `<details><summary>${a.name}</summary>`, '', '```text', a.extractedText, '```', '', '</details>');
+    }
     out.push('');
   }
   return `${out.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;

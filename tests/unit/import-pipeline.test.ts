@@ -132,7 +132,7 @@ describe('import pipeline', () => {
     await importZip(sampleChatGptExportFiles(), 'chatgpt');
     const before = await snapshot();
     const { batch } = await importZip(sampleChatGptExportFiles(), 'chatgpt', { skipExisting: false });
-    assert.equal(batch.counts.updated, 2);
+    assert.equal(batch.counts.duplicates, 2);
     const after = await snapshot();
     assert.deepEqual(after.messages, before.messages);
     assert.deepEqual(after.blobs, before.blobs);
