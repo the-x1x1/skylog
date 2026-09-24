@@ -30,10 +30,10 @@ describe('product name is a placeholder', () => {
       for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, f.name);
         if (f.isDirectory()) walk(p);
-        else if (/\.(tsx?|css|html|js|json|svg)$/.test(f.name) && pattern.test(fs.readFileSync(p, 'utf8'))) offenders.push(path.relative(ROOT, p));
+        else if (/\.(tsx?|css|html|js|json|svg|ya?ml)$/.test(f.name) && pattern.test(fs.readFileSync(p, 'utf8'))) offenders.push(path.relative(ROOT, p));
       }
     };
-    for (const dir of ['src', 'public', 'server', 'scripts']) walk(path.join(ROOT, dir));
+    for (const dir of ['src', 'public', 'server', 'scripts', '.github']) walk(path.join(ROOT, dir));
     if (pattern.test(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'))) offenders.push('index.html');
     assert.deepEqual(offenders, []);
   });

@@ -3,7 +3,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  { ignores: ['dist/**', 'dist-single/**', '.dev/**', 'node_modules/**', 'test-results/**', 'playwright-report/**'] },
+  { ignores: ['dist/**', 'dist-single/**', 'dist-demo/**', '.build/**', 'release/**', '.dev/**', 'node_modules/**', 'test-results/**', 'playwright-report/**'] },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],
@@ -22,7 +22,7 @@ export default defineConfig(
     },
   },
   {
-    files: ['scripts/**', 'server/**', 'tests/**', 'playwright.config.ts'],
+    files: ['scripts/**', 'server/**', 'tests/**', 'playwright.config.ts', 'playwright.exe.config.ts'],
     rules: { 'no-console': 'off' },
   },
 );

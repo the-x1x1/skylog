@@ -37,8 +37,41 @@ export const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+/** Identifies this app's server to a second launch of the desktop program (see server/desktop.ts). */
+export const APP_ID = 'conversation-journal';
+
+/**
+ * Where the built app's files come from: a dist/ folder on disk, or the assets embedded in the
+ * desktop executable.
+ */
+export interface StaticFiles {
+  /** Bytes of a file by its path relative to the app root ("index.html", "assets/app-1A2B3C4D.js"), or null. */
+  read(relPath: string): Buffer | null;
+}
+
+/** Serves files from a folder, refusing anything that resolves outside it. */
+export function directoryFiles(root: string): StaticFiles {
+  const base = path.resolve(root);
+  return {
+    read(relPath) {
+      const file = path.resolve(base, relPath);
+      if (!file.startsWith(base + path.sep)) return null;
+      try {
+        return fs.statSync(file).isFile() ? fs.readFileSync(file) : null;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
 export interface AppServerOptions {
-  root: string;
+  /** Folder holding the built app (dist/). Ignored when `files` is given. */
+  root?: string;
+  /** Alternative file source, e.g. assets embedded in the desktop executable. */
+  files?: StaticFiles;
+  /** Reported by /api/app so a second launch can recognize a running copy. */
+  version?: string;
   env: Record<string, string | undefined>;
   /** Dev only: server-sent-events endpoint that tells the page to reload after a rebuild. */
   liveReload?: { subscribe(fn: () => void): () => void };
@@ -103,10 +136,15 @@ export function isTrustedApiRequest(req: http.IncomingMessage): boolean {
 }
 
 export function createAppServer(opts: AppServerOptions): http.Server {
-  const root = path.resolve(opts.root);
+  const files = opts.files ?? (opts.root !== undefined ? directoryFiles(opts.root) : null);
+  if (!files) throw new Error('createAppServer needs a root folder or a file source.');
   return http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     try {
+      if (url.pathname === '/api/app' && req.method === 'GET') {
+        if (!isTrustedApiRequest(req)) return sendJson(res, 403, { error: 'Forbidden' });
+        return sendJson(res, 200, { app: APP_ID, name: opts.env.PUBLIC_APP_NAME ?? null, version: opts.version ?? null });
+      }
       if (url.pathname === '/api/llm/status' && req.method === 'GET') {
         if (!isTrustedApiRequest(req)) return sendJson(res, 403, { error: 'Forbidden' });
         return sendJson(res, 200, getLlmStatus(opts.env));
@@ -140,7 +178,7 @@ export function createAppServer(opts: AppServerOptions): http.Server {
         res.writeHead(405);
         return res.end();
       }
-      return serveStatic(root, url.pathname, res, Boolean(opts.liveReload));
+      return serveStatic(files, url.pathname, req.method === 'HEAD', res, Boolean(opts.liveReload));
     } catch (err) {
       if (err instanceof LlmAdapterError) return sendJson(res, err.status, { error: err.message });
       if (err instanceof SyntaxError) return sendJson(res, 400, { error: 'Invalid JSON body.' });
@@ -151,7 +189,7 @@ export function createAppServer(opts: AppServerOptions): http.Server {
   });
 }
 
-function serveStatic(root: string, pathname: string, res: http.ServerResponse, dev: boolean): void {
+function serveStatic(files: StaticFiles, pathname: string, headOnly: boolean, res: http.ServerResponse, dev: boolean): void {
   let rel: string;
   try {
     rel = decodeURIComponent(pathname);
@@ -160,27 +198,34 @@ function serveStatic(root: string, pathname: string, res: http.ServerResponse, d
     res.end();
     return;
   }
-  let file = path.join(root, path.normalize(rel));
-  if (!file.startsWith(root)) {
+  // Backslashes and NUL never appear in the app's own URLs; refusing them keeps Windows path
+  // semantics ("..\\") out of the lookup. An absolute POSIX normalize cannot climb above "/".
+  if (rel.includes('\\') || rel.includes('\0')) {
     res.writeHead(403);
     res.end();
     return;
   }
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html');
-  if (!fs.existsSync(file)) {
+  let name = path.posix.normalize(rel).replace(/^\/+/, '') || 'index.html';
+  let body = files.read(name);
+  if (!body) {
+    name = 'index.html';
+    body = files.read(name);
+  }
+  if (!body) {
     res.writeHead(404, { 'content-type': 'text/plain' });
     res.end('Not built yet. Run npm run build first.');
     return;
   }
-  const ext = path.extname(file).toLowerCase();
+  const ext = path.posix.extname(name).toLowerCase();
   const isHtml = ext === '.html';
-  const hashed = /-[A-Z0-9]{8}\.[a-z0-9]+$/i.test(file);
+  const hashed = /-[A-Z0-9]{8}\.[a-z0-9]+$/i.test(name);
   res.writeHead(200, {
     'content-type': MIME[ext] ?? 'application/octet-stream',
+    'content-length': body.length,
     'cache-control': dev || isHtml || !hashed ? 'no-cache' : 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     ...(isHtml ? { 'content-security-policy': CONTENT_SECURITY_POLICY } : {}),
   });
-  fs.createReadStream(file).pipe(res);
+  res.end(headOnly ? undefined : body);
 }

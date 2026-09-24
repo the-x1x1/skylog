@@ -12,11 +12,15 @@
     "build": "tsx scripts/build.ts",
     "build:single": "tsx scripts/build.ts --single-file",
     "build:demo": "tsx scripts/build.ts --demo",
+    "build:exe": "tsx scripts/build-exe.ts",
+    "build:release": "tsx scripts/build-exe.ts --with-html",
+    "smoke:exe": "tsx scripts/smoke-exe.ts",
     "start": "tsx scripts/serve.ts",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
     "lint": "eslint . --max-warnings=0",
     "test": "node --import tsx --test --test-reporter=spec \"tests/unit/**/*.test.ts\" \"tests/unit/**/*.test.tsx\"",
     "test:e2e": "playwright test",
+    "test:e2e:exe": "playwright test -c playwright.exe.config.ts",
     "fixtures": "tsx scripts/make-fixture-exports.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e"
   },
@@ -34,6 +38,7 @@
     "esbuild": "0.27.7",
     "eslint": "^10.1.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "postject": "1.0.0-alpha.6",
     "tsx": "^4.21.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.70.1"

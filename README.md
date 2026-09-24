@@ -8,6 +8,20 @@ Everything stays on your device. There is no account, no cloud copy and no telem
 
 ---
 
+## Download and run
+
+**Windows:** download `Skylog-<version>-windows-x64.exe` from the [latest release](https://github.com/the-x1x1/skylog/releases/latest) and double-click it. A small window opens and your journal opens in your browser at `http://localhost:4173`. Keep the window open while you use the journal, and close it to quit.
+
+- The program isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC". Choose **More info**, then **Run anyway**.
+- Your entries are saved in your browser, not in the program, so replacing the `.exe` with a newer version keeps your journal. Clearing the browser's site data for `localhost` deletes the journal; **Settings → Back up journal** keeps a copy.
+- To turn on summaries, put a `.env.local` file next to the `.exe` (see [Local server setup](#local-server-setup)) and start the program again.
+
+**Any computer, nothing to install:** download `Skylog-<version>.html` from the same release and open it in Chrome or Edge. Everything works except summaries through a cloud model; Ollama works.
+
+**macOS and Linux:** run from source (below), or build your own program with `npm run build:exe`.
+
+---
+
 ## Quick start
 
 Requires **Node.js 20.19 or newer**.
@@ -72,6 +86,8 @@ cp .env.example .env.local
 #   ANTHROPIC_API_KEY=sk-ant-...        (or OPENAI_API_KEY=... and LLM_VENDOR=openai)
 npm run dev   # or: npm run build && npm start
 ```
+
+With the Windows program, put `.env.local` in the same folder as the `.exe` instead. In Notepad, set **Save as type** to **All files** so the file isn't saved as `.env.local.txt`.
 
 The key is read by the Node server only (`server/llm-adapter.ts`); it is never bundled into browser code. The API accepts requests only from the app's own origin with the app's header.
 
@@ -148,6 +164,7 @@ Representative archives for every case live in `fixtures/exports/` (regenerate w
 - HEIC/HEIF images are stored but most browsers can't display them (a download is offered).
 - Audio, video and canvas content are not imported beyond their transcripts or text.
 - ChatGPT Projects, Claude Projects and memories are not imported as structure.
+- The Windows program isn't code-signed yet, so SmartScreen shows a warning the first time. No macOS or Linux program is published yet; `npm run build:exe` on those systems builds one.
 - The search index lives in memory in a worker (built at startup, about 4 s per 2,000 conversations, then updated incrementally).
 
 ---
@@ -170,7 +187,7 @@ On the synthetic 2,000-conversation export from `scripts/make-large-export.ts` (
 1. Change `PUBLIC_APP_NAME` in `.env`.
 2. `npm run build`.
 
-That's it. The database name (`conversation-journal`), storage keys (`cj:*`), package name and export file names don't use the product name, so existing journals keep working. A unit test fails if the name is hard-coded anywhere in the app.
+That's it. The Windows program's file name follows it too. The database name (`conversation-journal`), storage keys (`cj:*`), package name and export file names don't use the product name, so existing journals keep working. A unit test fails if the name is hard-coded anywhere in the app.
 
 ---
 
@@ -182,6 +199,10 @@ That's it. The database name (`conversation-journal`), storage keys (`cj:*`), pa
 | `npm run build` | Production build to `dist/` |
 | `npm run build:single` | Everything inlined into one `dist-single/index.html` (works from `file://`) |
 | `npm run build:demo` | Hosted demo fragment in `dist-demo/` (sample preloaded, downloads removed) |
+| `npm run build:exe` | Desktop program for this OS in `release/` (Node single executable with the app embedded) |
+| `npm run build:release` | The desktop program plus the single-file app and `SHA256SUMS.txt` (what releases ship) |
+| `npm run smoke:exe` | Start the built program and check it serves the app |
+| `npm run test:e2e:exe` | The Playwright suite against the built program instead of the dev server |
 | `npm start` | Serve `dist/` locally (with the summarizer API) |
 | `npm run typecheck` | TypeScript, browser and Node projects |
 | `npm run lint` | ESLint (typescript-eslint, React hooks), zero warnings |
@@ -203,8 +224,9 @@ src/
   export/         Markdown and JSON entry export
   fixtures/       sample exports used by "Use sample journal" and tests
   styles/         design tokens and CSS
-server/           local HTTP server and summarizer adapter (Node)
-scripts/          build, dev, serve, fixture generators
+server/           local HTTP server, summarizer adapter, desktop launcher (Node)
+scripts/          build, dev, serve, desktop program build and smoke test, fixture generators
+.github/          CI (tests + Windows build on every PR) and the release workflow
 tests/            unit/ (node:test) · e2e/ (Playwright) · helpers/
 docs/             PLAN.md, DECISIONS.md, REVIEW.md (independent review findings and fixes)
 ```
@@ -212,6 +234,12 @@ docs/             PLAN.md, DECISIONS.md, REVIEW.md (independent review findings 
 ### Adding an import source
 
 Implement `ConversationImporter` (`src/importers/core/types.ts`) — `score`, `canHandle`, `inspect`, `iterate`, `parse` — and add it to `src/importers/registry.ts`. Detection, preview, the pipeline, deduplication, the report and the UI need no changes. The same seam works for a watched folder or an official API: produce an `ArchiveManifest` and call `runImport`.
+
+### Releasing
+
+1. Set the new version in `package.json` and add `docs/release-notes/v<version>.md`, then merge to `main`.
+2. Tag and publish: `git tag -a v<version> -m "v<version>"`, `git push origin v<version>`, then `gh release create v<version> --verify-tag --title "<Name> <version>" --notes-file docs/release-notes/v<version>.md`.
+3. The **Release** workflow builds the Windows program on a Windows runner and smoke-tests it. It then attaches the `.exe`, the single-file `.html` and `SHA256SUMS.txt` to the release, which takes about 5 minutes. It refuses a tag that doesn't match `package.json`. To rebuild the files for an existing tag, run `gh workflow run release.yml -f tag=v<version>`.
 
 ### Tooling note
 
