@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-single/
+.dev/
+test-results/
+playwright-report/
+*.log
+.env.local
+.env.*.local
+.DS_Store
+dist-demo/
+.build/
+release/

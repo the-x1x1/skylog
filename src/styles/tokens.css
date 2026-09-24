@@ -1,0 +1,131 @@
+/*
+ * Design tokens. Pale-blue editorial light theme and a calm deep-blue dark theme.
+ * If the design handoff's tokens.json is available, map its values onto these variables —
+ * components only ever reference the variables.
+ */
+
+@font-face {
+  font-family: 'Fraunces';
+  src: url('../assets/fonts/fraunces-var.woff') format('woff');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fraunces';
+  src: url('../assets/fonts/fraunces-italic-var.woff') format('woff');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Manrope';
+  src: url('../assets/fonts/manrope-var.woff') format('woff');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../assets/fonts/jetbrains-mono-var.woff') format('woff');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-display: 'Fraunces', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-ui: 'Manrope', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --sidebar-w: 264px;
+  --content-w: 920px;
+  --touch: 44px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Light */
+  --bg: #f2f6fb;
+  --bg-sunken: #e9f0f8;
+  --surface: #ffffff;
+  --surface-2: #f6f9fd;
+  --tint: #e4edf9;
+  --tint-strong: #d5e3f6;
+  --image-well: #dfe8f3;
+  --ink: #0f1d2f;
+  --ink-2: #3a4a60;
+  --ink-3: #56667c;
+  --line: #d6e0ec;
+  --line-strong: #bccadc;
+  --accent: #2a5fc1;
+  --accent-hover: #214fa6;
+  --accent-soft: #dce7fb;
+  --accent-ink: #1b4491;
+  --on-accent: #ffffff;
+  --focus: #2a5fc1;
+  --mark-bg: #fbe39a;
+  --mark-ink: #34290a;
+  --danger: #b42318;
+  --danger-soft: #fdebea;
+  --warn: #8a5300;
+  --warn-soft: #fdf2dc;
+  --ok: #1d7249;
+  --ok-soft: #e2f3ea;
+  --chatgpt: #0f7a5c;
+  --claude: #b4532a;
+  --scrim: rgba(8, 15, 27, 0.72);
+  --shadow-sm: 0 1px 2px rgba(15, 29, 47, 0.06), 0 1px 1px rgba(15, 29, 47, 0.04);
+  --shadow-md: 0 10px 28px -14px rgba(15, 29, 47, 0.3), 0 2px 6px -2px rgba(15, 29, 47, 0.08);
+  --shadow-lg: 0 24px 60px -20px rgba(15, 29, 47, 0.4);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: #0b1320;
+  --bg-sunken: #0d1726;
+  --surface: #111c2e;
+  --surface-2: #142136;
+  --tint: #152741;
+  --tint-strong: #1b3152;
+  --image-well: #0e1929;
+  --ink: #e6edf7;
+  --ink-2: #b3c1d5;
+  --ink-3: #8b9cb4;
+  --line: #213249;
+  --line-strong: #2d4362;
+  --accent: #80aaf5;
+  --accent-hover: #a0c0f8;
+  --accent-soft: #1c3258;
+  --accent-ink: #bcd2fa;
+  --on-accent: #0b1320;
+  --focus: #a0c0f8;
+  --mark-bg: #5b4910;
+  --mark-ink: #fff2c7;
+  --danger: #f28b82;
+  --danger-soft: #3a1b1d;
+  --warn: #f2c26b;
+  --warn-soft: #33260f;
+  --ok: #6fd3a0;
+  --ok-soft: #12301f;
+  --chatgpt: #4cc59e;
+  --claude: #e8926c;
+  --scrim: rgba(3, 7, 14, 0.82);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 12px 30px -14px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+  color-scheme: dark;
+}

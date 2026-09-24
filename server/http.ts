@@ -1,0 +1,231 @@
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import { callLlm, getLlmStatus, LlmAdapterError, validateLlmBody } from './llm-adapter';
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
+};
+
+/**
+ * Content Security Policy for the served app. The browser may only talk to this origin and to
+ * localhost (for an optional local Ollama summarizer). Conversation data therefore cannot be sent
+ * to any third-party host from the browser, even by accident.
+ */
+export const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' blob: data:",
+  "font-src 'self' data:",
+  "worker-src 'self' blob:",
+  "connect-src 'self' http://localhost:* http://127.0.0.1:*",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+/** Identifies this app's server to a second launch of the desktop program (see server/desktop.ts). */
+export const APP_ID = 'conversation-journal';
+
+/**
+ * Where the built app's files come from: a dist/ folder on disk, or the assets embedded in the
+ * desktop executable.
+ */
+export interface StaticFiles {
+  /** Bytes of a file by its path relative to the app root ("index.html", "assets/app-1A2B3C4D.js"), or null. */
+  read(relPath: string): Buffer | null;
+}
+
+/** Serves files from a folder, refusing anything that resolves outside it. */
+export function directoryFiles(root: string): StaticFiles {
+  const base = path.resolve(root);
+  return {
+    read(relPath) {
+      const file = path.resolve(base, relPath);
+      if (!file.startsWith(base + path.sep)) return null;
+      try {
+        return fs.statSync(file).isFile() ? fs.readFileSync(file) : null;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+export interface AppServerOptions {
+  /** Folder holding the built app (dist/). Ignored when `files` is given. */
+  root?: string;
+  /** Alternative file source, e.g. assets embedded in the desktop executable. */
+  files?: StaticFiles;
+  /** Reported by /api/app so a second launch can recognize a running copy. */
+  version?: string;
+  env: Record<string, string | undefined>;
+  /** Dev only: server-sent-events endpoint that tells the page to reload after a rebuild. */
+  liveReload?: { subscribe(fn: () => void): () => void };
+  fetchImpl?: typeof fetch;
+}
+
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new LlmAdapterError('Request body too large.', 413));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res: http.ServerResponse, status: number, data: unknown) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(data));
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+function hostnameOf(hostHeader: string): string | null {
+  try {
+    return new URL(`http://${hostHeader}`).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The API is only for this app's own pages:
+ * - the custom header forces a CORS preflight we never answer, so ordinary cross-site requests fail;
+ * - the Host must be a loopback name, which defeats DNS-rebinding (a hostile domain re-pointed
+ *   at 127.0.0.1 still sends its own name as Host);
+ * - when a browser sends Origin, it must be this same loopback host.
+ */
+export function isTrustedApiRequest(req: http.IncomingMessage): boolean {
+  if (req.headers['x-journal-client'] !== '1') return false;
+  const host = req.headers.host ?? '';
+  const hostname = hostnameOf(host);
+  if (!hostname || !LOOPBACK_HOSTS.has(hostname)) return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    const o = new URL(origin);
+    return o.host === host && LOOPBACK_HOSTS.has(o.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function createAppServer(opts: AppServerOptions): http.Server {
+  const files = opts.files ?? (opts.root !== undefined ? directoryFiles(opts.root) : null);
+  if (!files) throw new Error('createAppServer needs a root folder or a file source.');
+  return http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    try {
+      if (url.pathname === '/api/app' && req.method === 'GET') {
+        if (!isTrustedApiRequest(req)) return sendJson(res, 403, { error: 'Forbidden' });
+        return sendJson(res, 200, { app: APP_ID, name: opts.env.PUBLIC_APP_NAME ?? null, version: opts.version ?? null });
+      }
+      if (url.pathname === '/api/llm/status' && req.method === 'GET') {
+        if (!isTrustedApiRequest(req)) return sendJson(res, 403, { error: 'Forbidden' });
+        return sendJson(res, 200, getLlmStatus(opts.env));
+      }
+      if (url.pathname === '/api/llm' && req.method === 'POST') {
+        if (!isTrustedApiRequest(req)) return sendJson(res, 403, { error: 'Forbidden' });
+        const body = validateLlmBody(JSON.parse(await readBody(req)));
+        const controller = new AbortController();
+        res.on('close', () => {
+          if (!res.writableEnded) controller.abort();
+        });
+        const timeout = setTimeout(() => controller.abort(), 180_000);
+        try {
+          const result = await callLlm(body, opts.env, controller.signal, opts.fetchImpl);
+          return sendJson(res, 200, result);
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+      if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'Not found' });
+
+      if (url.pathname === '/__livereload' && opts.liveReload) {
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+        res.write(': connected\n\n');
+        const unsubscribe = opts.liveReload.subscribe(() => res.write('data: reload\n\n'));
+        req.on('close', unsubscribe);
+        return;
+      }
+
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405);
+        return res.end();
+      }
+      return serveStatic(files, url.pathname, req.method === 'HEAD', res, Boolean(opts.liveReload));
+    } catch (err) {
+      if (err instanceof LlmAdapterError) return sendJson(res, err.status, { error: err.message });
+      if (err instanceof SyntaxError) return sendJson(res, 400, { error: 'Invalid JSON body.' });
+      const message = err instanceof Error ? err.message : String(err);
+      if (!res.headersSent) return sendJson(res, 500, { error: message });
+      res.end();
+    }
+  });
+}
+
+function serveStatic(files: StaticFiles, pathname: string, headOnly: boolean, res: http.ServerResponse, dev: boolean): void {
+  let rel: string;
+  try {
+    rel = decodeURIComponent(pathname);
+  } catch {
+    res.writeHead(400);
+    res.end();
+    return;
+  }
+  // Backslashes and NUL never appear in the app's own URLs; refusing them keeps Windows path
+  // semantics ("..\\") out of the lookup. An absolute POSIX normalize cannot climb above "/".
+  if (rel.includes('\\') || rel.includes('\0')) {
+    res.writeHead(403);
+    res.end();
+    return;
+  }
+  let name = path.posix.normalize(rel).replace(/^\/+/, '') || 'index.html';
+  let body = files.read(name);
+  if (!body) {
+    name = 'index.html';
+    body = files.read(name);
+  }
+  if (!body) {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('Not built yet. Run npm run build first.');
+    return;
+  }
+  const ext = path.posix.extname(name).toLowerCase();
+  const isHtml = ext === '.html';
+  const hashed = /-[A-Z0-9]{8}\.[a-z0-9]+$/i.test(name);
+  res.writeHead(200, {
+    'content-type': MIME[ext] ?? 'application/octet-stream',
+    'content-length': body.length,
+    'cache-control': dev || isHtml || !hashed ? 'no-cache' : 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    ...(isHtml ? { 'content-security-policy': CONTENT_SECURITY_POLICY } : {}),
+  });
+  res.end(headOnly ? undefined : body);
+}
