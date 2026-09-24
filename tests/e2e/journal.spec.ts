@@ -114,3 +114,24 @@ test('summaries off by default; local server shows an honest not-ready status', 
   await expect(page.getByText('Not ready')).toBeVisible();
   await expect(page.getByText(/No API key configured/)).toBeVisible();
 });
+
+test('back up the journal, delete everything, and restore it', async ({ page }) => {
+  await loadSampleJournal(page);
+  await page.goto('/#/settings');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Back up journal' }).click()]);
+  expect(download.suggestedFilename()).toMatch(/^journal-backup-\d{4}-\d{2}-\d{2}\.zip$/);
+  const file = (await download.path())!;
+  await expect(page.getByText(/Backup saved: 3 entries, 5 images/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Delete all local data' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete everything' }).click();
+  await expect(page.getByText('All local data deleted.')).toBeVisible();
+
+  await page.locator('#restore-file').setInputFiles(file);
+  await page.getByRole('dialog').getByRole('button', { name: 'Restore' }).click();
+  await expect(page.getByText(/Restored 3 entries and 5 images/)).toBeVisible();
+  await page.goto('/#/');
+  await expect(page.locator('.entry-card')).toHaveCount(3);
+  await page.locator('.entry-card__link', { hasText: 'hologram' }).click();
+  await expect(page.locator('.gallery img').first()).toBeVisible();
+});

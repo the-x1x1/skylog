@@ -38,6 +38,7 @@ export const chatgptImporter: ConversationImporter = {
     let referenced = 0;
     const created: (string | null)[] = [];
     const updated: (string | null)[] = [];
+    const ids: string[] = [];
     let malformed = 0;
     for (const c of list) {
       const conv = c as GptConversation;
@@ -47,6 +48,8 @@ export const chatgptImporter: ConversationImporter = {
       }
       created.push(toIso(conv.create_time));
       updated.push(toIso(conv.update_time));
+      const id = conv.conversation_id || conv.id;
+      if (typeof id === 'string') ids.push(id);
       for (const node of Object.values(conv.mapping)) {
         const content = node?.message?.content;
         if (!content || typeof content !== 'object' || !Array.isArray(content.parts)) continue;
@@ -75,6 +78,7 @@ export const chatgptImporter: ConversationImporter = {
       imageFilesPresent: present,
       warnings,
       dateRange: { from: minIso(created), to: maxIso(updated) },
+      conversationIds: ids,
     };
   },
 

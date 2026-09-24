@@ -35,6 +35,7 @@ export const claudeImporter: ConversationImporter = {
     let present = 0;
     const created: (string | null)[] = [];
     const updated: (string | null)[] = [];
+    const ids: string[] = [];
     for (const c of list) {
       const conv = c as ClaudeConversation;
       const msgs = conv && typeof conv === 'object' ? (conv.chat_messages ?? conv.messages) : null;
@@ -44,6 +45,8 @@ export const claudeImporter: ConversationImporter = {
       }
       created.push(toIso(conv.created_at));
       updated.push(toIso(conv.updated_at));
+      const id = conv.uuid || conv.id;
+      if (typeof id === 'string') ids.push(id);
       const svgArtifacts = new Set<string>();
       for (const msg of msgs) {
         if (!msg || typeof msg !== 'object') continue;
@@ -86,6 +89,7 @@ export const claudeImporter: ConversationImporter = {
       imageFilesPresent: present,
       warnings,
       dateRange: { from: minIso(created), to: maxIso(updated) },
+      conversationIds: ids,
     };
   },
 

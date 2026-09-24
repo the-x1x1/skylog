@@ -11,7 +11,7 @@ import { ImportController } from '../../src/importers/core/session';
 import { ImportError } from '../../src/importers/core/types';
 import { ZipReader } from '../../src/importers/core/zip';
 import { IMPORTERS } from '../../src/importers/registry';
-import { createZip } from '../../scripts/lib/zip-writer';
+import { createZip } from '../../src/utils/zip-writer';
 import { chatgptEdgeCaseFiles, claudeEdgeCaseFiles, PNG_1PX } from '../helpers/fixtures';
 import { zipArchive } from '../helpers/db';
 

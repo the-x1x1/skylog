@@ -26,19 +26,43 @@ async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
 
 export type ZipInput = Record<string, string | Uint8Array>;
 
+export interface ZipEntryInput {
+  name: string;
+  data: string | Uint8Array;
+  /** Default true. Store already-compressed data (images) without deflating. */
+  compress?: boolean;
+}
+
 export async function createZip(files: ZipInput, opts: { compress?: boolean } = {}): Promise<Uint8Array> {
-  const compress = opts.compress ?? true;
+  const parts = await zipParts(Object.entries(files).map(([name, data]) => ({ name, data, compress: opts.compress ?? true })));
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let p = 0;
+  for (const part of parts) {
+    out.set(part, p);
+    p += part.length;
+  }
+  return out;
+}
+
+/** Builds the archive as a Blob without one large contiguous copy (used for journal backups). */
+export async function createZipBlob(entries: ZipEntryInput[]): Promise<Blob> {
+  return new Blob((await zipParts(entries)) as BlobPart[], { type: 'application/zip' });
+}
+
+async function zipParts(entries: ZipEntryInput[]): Promise<Uint8Array[]> {
   const enc = new TextEncoder();
   const locals: Uint8Array[] = [];
   const centrals: Uint8Array[] = [];
   let offset = 0;
+  if (entries.length > 0xffff) throw new Error('Too many files for a ZIP without ZIP64.');
 
-  for (const [name, content] of Object.entries(files)) {
-    const raw = typeof content === 'string' ? enc.encode(content) : content;
+  for (const { name, data, compress = true } of entries) {
+    const raw = typeof data === 'string' ? enc.encode(data) : data;
     const nameBytes = enc.encode(name);
     const crc = crc32(raw);
     const body = compress ? await deflateRaw(raw) : raw;
     const method = compress ? 8 : 0;
+    if (offset + 30 + nameBytes.length + body.length > 0xffffffff) throw new Error('Archive larger than 4 GB is not supported.');
 
     const local = new Uint8Array(30 + nameBytes.length + body.length);
     const lv = new DataView(local.buffer);
@@ -80,11 +104,5 @@ export async function createZip(files: ZipInput, opts: { compress?: boolean } = 
   ev.setUint32(12, cdSize, true);
   ev.setUint32(16, offset, true);
 
-  const out = new Uint8Array(offset + cdSize + 22);
-  let p = 0;
-  for (const part of [...locals, ...centrals, eocd]) {
-    out.set(part, p);
-    p += part.length;
-  }
-  return out;
+  return [...locals, ...centrals, eocd];
 }

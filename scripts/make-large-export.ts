@@ -5,7 +5,7 @@
  */
 import fs from 'node:fs';
 import { PNG_1PX } from '../tests/helpers/fixtures';
-import { createZip } from './lib/zip-writer';
+import { createZip } from '../src/utils/zip-writer';
 
 const WORDS = 'walnut pyramid garden trellis sourdough starter lighthouse acrylic budget spreadsheet travel itinerary kyoto recipe bracket shelf cedar soil compost battery solar panel inverter guitar chord melody python script database index migration schema invoice client proposal marathon training interval tempo recovery'.split(' ');
 

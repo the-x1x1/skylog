@@ -33,7 +33,7 @@ Then open the app and either **Import conversations** or choose **Use sample jou
 | ChatGPT | Settings → Data controls → Export data | A `.zip` with `conversations.json`, `chat.html`, and your images |
 | Claude | Settings → Privacy → Export data | A `.zip` with `conversations.json`, `users.json`, `projects.json` |
 
-Drop the `.zip` onto the Import page. The source is detected automatically; you'll see a preview (conversation count, images, date range, warnings) before anything is saved.
+Drop the `.zip` onto the Import page. The source is detected automatically; you'll see a preview (conversation count, how many are already in your journal, images, date range, warnings) before anything is saved. You can keep browsing while an import runs — progress shows in the sidebar.
 
 ---
 
@@ -105,6 +105,10 @@ Press **Ctrl K** (**⌘K** on Mac) from anywhere. Search covers titles, subtitle
 - Fonts are bundled; nothing is fetched from font or script CDNs. After the first load the app works offline (summaries through a remote vendor excepted).
 - If the browser blocks storage (some private windows), the app still works in memory and says clearly that nothing will be kept.
 
+### Keeping your journal safe
+
+Browsers can clear site data when a device runs low on space. After your first import the app asks the browser to keep its storage persistent (Settings → Your data shows whether it agreed). **Settings → Back up journal** saves everything — entries, transcripts, images, edits and import reports — as one `.zip`; **Restore from backup** merges it back (entries in both are replaced by the backup's copy; nothing else is removed). Dropping a backup onto the Import page tells you to restore it from Settings instead.
+
 ---
 
 ## Supported export formats
@@ -144,7 +148,6 @@ Representative archives for every case live in `fixtures/exports/` (regenerate w
 - HEIC/HEIF images are stored but most browsers can't display them (a download is offered).
 - Audio, video and canvas content are not imported beyond their transcripts or text.
 - ChatGPT Projects, Claude Projects and memories are not imported as structure.
-- There is no whole-journal backup/restore yet; each entry can be exported as Markdown or JSON, and the original export can always be re-imported.
 - The search index lives in memory in a worker (built at startup, about 4 s per 2,000 conversations, then updated incrementally).
 
 ---

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { buildLargeExport } from '../../scripts/make-large-export';
-import { createZip } from '../../scripts/lib/zip-writer';
+import { createZip } from '../../src/utils/zip-writer';
 
 test('an import keeps running while you browse, with visible progress', async ({ page }, info) => {
   test.setTimeout(90_000);

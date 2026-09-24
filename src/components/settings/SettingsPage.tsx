@@ -7,7 +7,9 @@ import { deleteAllData, deleteSampleData } from '../../data/repositories/entries
 import { createClient, createProvider, DEFAULT_OLLAMA, localServerEndpoint, saveSummaryConfig, summarizeEntry } from '../../summarization/service';
 import type { ProviderStatus, SummaryProviderConfig } from '../../summarization/types';
 import { useSummaryConfig } from '../../summarization/useSummaryConfig';
-import { pluralize } from '../../utils/text';
+import { backupFileName, createBackup, restoreBackup } from '../../data/backup';
+import { getStorageStatus, requestPersistentStorage, type StorageStatus } from '../../data/storage';
+import { formatBytes, pluralize } from '../../utils/text';
 import { Icon } from '../shared/Icon';
 import { Button, ConfirmDialog, Notice, ProgressBar } from '../shared/ui';
 
@@ -219,6 +221,127 @@ function AppearanceSettings() {
   );
 }
 
+function StorageLine() {
+  const [status, setStatus] = useState<StorageStatus | null>(null);
+  const [asking, setAsking] = useState(false);
+  useEffect(() => {
+    void getStorageStatus().then(setStatus);
+  }, []);
+  if (!status || status.persisted === null) return null;
+  const usage = status.usage !== null ? `${formatBytes(status.usage)}${status.quota ? ` of about ${formatBytes(status.quota)} available` : ''}` : null;
+  return (
+    <div className="storage-line">
+      <p className="small">
+        {status.persisted
+          ? 'This browser has agreed to keep your journal until you delete it.'
+          : 'This browser may clear your journal if the device runs low on space. Keep a backup, or ask the browser to keep it.'}
+        {usage ? <span className="muted"> Using {usage}.</span> : null}
+      </p>
+      {!status.persisted ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="lock"
+          busy={asking}
+          onClick={async () => {
+            setAsking(true);
+            await requestPersistentStorage();
+            setStatus(await getStorageStatus());
+            setAsking(false);
+          }}
+        >
+          Ask the browser to keep it
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function BackupControls() {
+  const [busy, setBusy] = useState<null | 'backup' | 'restore'>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [pending, setPending] = useState<File | null>(null);
+
+  const backup = async () => {
+    setBusy('backup');
+    setMessage(null);
+    try {
+      const { blob, summary } = await createBackup((done, total) => setProgress({ done, total }));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = backupFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setMessage({ tone: 'ok', text: `Backup saved: ${pluralize(summary.entries, 'entry', 'entries')}, ${pluralize(summary.images, 'image')}, ${formatBytes(summary.bytes)}.` });
+    } catch (err) {
+      setMessage({ tone: 'error', text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+      setProgress(null);
+    }
+  };
+
+  const restore = async (file: File) => {
+    setBusy('restore');
+    setMessage(null);
+    try {
+      const summary = await restoreBackup(file, file.name, (done, total) => setProgress({ done, total }));
+      setMessage({ tone: 'ok', text: `Restored ${pluralize(summary.entries, 'entry', 'entries')} and ${pluralize(summary.images, 'image')} from ${file.name}.` });
+    } catch (err) {
+      setMessage({ tone: 'error', text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+      setProgress(null);
+      setPending(null);
+    }
+  };
+
+  const canDownload = typeof __DOWNLOADS_ENABLED__ !== 'boolean' || __DOWNLOADS_ENABLED__;
+  return (
+    <div className="backup">
+      <div className="settings-actions">
+        {canDownload ? (
+          <Button variant="secondary" icon="download" onClick={backup} busy={busy === 'backup'} disabled={busy !== null}>
+            Back up journal
+          </Button>
+        ) : null}
+        <input
+          id="restore-file"
+          type="file"
+          accept=".zip,application/zip"
+          className="sr-only"
+          disabled={busy !== null}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) setPending(f);
+            e.target.value = '';
+          }}
+        />
+        <label htmlFor="restore-file" className={`btn btn--secondary btn--md${busy ? ' is-disabled' : ''}`}>
+          <Icon name="upload" size={18} />
+          <span>Restore from backup</span>
+        </label>
+      </div>
+      {progress ? <ProgressBar value={progress.done} max={progress.total} label={busy === 'backup' ? 'Backing up' : 'Restoring'} /> : null}
+      {message ? <Notice tone={message.tone}>{message.text}</Notice> : null}
+      <p className="small muted">A backup is one .zip with every entry, transcript, image, edit and import report. Restoring merges it into this journal; entries in both are replaced by the backup's copy.</p>
+      <ConfirmDialog
+        open={pending !== null}
+        title="Restore this backup?"
+        body={<p>{pending?.name} will be merged into your journal. Entries that exist in both are replaced by the backup's version; nothing else is removed.</p>}
+        confirmLabel="Restore"
+        busy={busy === 'restore'}
+        onCancel={() => setPending(null)}
+        onConfirm={() => pending && restore(pending)}
+      />
+    </div>
+  );
+}
+
 function DataSettings() {
   const { entries, storageMode } = useAppData();
   const [confirm, setConfirm] = useState(false);
@@ -236,6 +359,8 @@ function DataSettings() {
           ? `Stored in this browser on this device: ${pluralize(entries.length, 'entry', 'entries')} and ${pluralize(images, 'image')}. There is no account and no cloud copy.`
           : 'This browser is blocking local storage, so data only lasts until you close the tab.'}
       </p>
+      {storageMode === 'persistent' ? <StorageLine /> : null}
+      <BackupControls />
       <div className="settings-actions">
         {samples > 0 ? (
           <Button

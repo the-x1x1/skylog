@@ -78,6 +78,10 @@ export interface ImportPreview {
   imageFilesPresent: number | null;
   warnings: string[];
   dateRange: { from: string | null; to: string | null };
+  /** Source ids of the conversations in the export (used to count what's already imported). */
+  conversationIds?: string[];
+  /** How many of the export's conversations are already in the journal. */
+  alreadyInJournal?: number;
 }
 
 export interface ParseProgress {

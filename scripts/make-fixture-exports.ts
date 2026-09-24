@@ -7,7 +7,7 @@ import path from 'node:path';
 import { sampleChatGptExportFiles, sampleClaudeExportFiles } from '../src/fixtures/sample-exports';
 import { chatgptEdgeCaseFiles, claudeEdgeCaseFiles } from '../tests/helpers/fixtures';
 import { ROOT } from './lib/bundle';
-import { createZip } from './lib/zip-writer';
+import { createZip } from '../src/utils/zip-writer';
 
 const out = path.join(ROOT, 'fixtures/exports');
 fs.mkdirSync(out, { recursive: true });

@@ -814,3 +814,35 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.storage-line,
+.backup {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.backup .progress {
+  width: 100%;
+}
+
+.backup .notice {
+  width: 100%;
+  margin: 0;
+}
+
+label.btn {
+  cursor: pointer;
+}
+
+label.btn.is-disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.backup:has(#restore-file:focus-visible) label[for='restore-file'] {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

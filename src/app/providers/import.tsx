@@ -4,6 +4,7 @@ import type { DetectionResult } from '../../importers/core/detect';
 import type { ImportPreview, ImportProgress } from '../../importers/core/types';
 import { createImportSession, type ImportSession } from '../../importers/worker/client';
 import { recoverInterruptedWork } from '../../data/recovery';
+import { requestPersistentStorage } from '../../data/storage';
 import { loadSummaryConfig } from '../../summarization/service';
 import { useLocation } from '../router';
 
@@ -85,6 +86,8 @@ export function ImportProvider({ children }: { children: ReactNode }) {
           setStep((s) => (s.kind === 'running' ? { ...s, progress } : s)),
         );
         setStep({ kind: 'done', batch });
+        // Now there's real data worth keeping: ask the browser not to evict it under pressure.
+        if (batch.counts.imported + batch.counts.updated > 0) void requestPersistentStorage();
       } catch (err) {
         reset(err instanceof Error ? err.message : String(err));
         // The worker may have died mid-import; settle anything it left running or pending.

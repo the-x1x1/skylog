@@ -165,6 +165,7 @@ export function ImportPage() {
           </p>
           <dl className="stats">
             <Stat label="Conversations" value={step.preview.conversationCount.toLocaleString()} />
+            {step.preview.alreadyInJournal ? <Stat label="Already in your journal" value={step.preview.alreadyInJournal.toLocaleString()} /> : null}
             <Stat label="Image references" value={step.preview.imageCount === null ? 'unknown' : step.preview.imageCount.toLocaleString()} />
             <Stat label="Image files in export" value={step.preview.imageFilesPresent === null ? 'unknown' : step.preview.imageFilesPresent.toLocaleString()} />
             <Stat
