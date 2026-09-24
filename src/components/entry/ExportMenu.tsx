@@ -3,7 +3,12 @@ import type { EntryView } from '../../data/repositories/entries';
 import { downloadText, entryToJson, entryToMarkdown, exportFileName } from '../../export/entry-export';
 import { Icon } from '../shared/Icon';
 
-export function ExportMenu({ view, compact }: { view: EntryView; compact?: boolean }) {
+export function ExportMenu(props: { view: EntryView; compact?: boolean }) {
+  // Inline build constant (not an imported one) so demo builds drop the download code entirely.
+  return typeof __DOWNLOADS_ENABLED__ !== 'boolean' || __DOWNLOADS_ENABLED__ ? <ExportMenuInner {...props} /> : null;
+}
+
+function ExportMenuInner({ view, compact }: { view: EntryView; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);

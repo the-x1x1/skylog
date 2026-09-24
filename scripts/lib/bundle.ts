@@ -15,6 +15,8 @@ export interface BundleOptions {
   env: Record<string, string>;
   /** Dev only: include the live-reload client. */
   liveReload?: boolean;
+  /** Hosted demo: emit a page fragment (no html/head/body), no downloads, sample preloaded. */
+  demo?: boolean;
 }
 
 const WORKERS = {
@@ -28,6 +30,8 @@ function defines(opts: BundleOptions, workers: Record<keyof typeof WORKERS, Work
     __APP_NAME__: JSON.stringify(pub.PUBLIC_APP_NAME ?? ''),
     __APP_VERSION__: JSON.stringify(JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version),
     __DEV__: JSON.stringify(opts.mode === 'development'),
+    __DOWNLOADS_ENABLED__: JSON.stringify(!opts.demo),
+    __AUTOLOAD_SAMPLE__: JSON.stringify(!!opts.demo),
     __IMPORT_WORKER__: JSON.stringify(workers.import),
     __SEARCH_WORKER__: JSON.stringify(workers.search),
     'process.env.NODE_ENV': JSON.stringify(opts.mode),
@@ -109,6 +113,23 @@ function renderHtml(opts: BundleOptions, parts: { css: string; js: string; singl
     .replace('<!--body-->', body.join('\n    '));
 }
 
+/** A page fragment for hosts that supply their own document skeleton. */
+function renderFragment(opts: BundleOptions, parts: { css: string; js: string }): string {
+  const appName = publicEnv(opts.env).PUBLIC_APP_NAME || 'Journal';
+  const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const themeInit = fs.readFileSync(path.join(ROOT, 'public/theme-init.js'), 'utf8');
+  return [
+    `<title>${escapeHtml(appName)}</title>`,
+    `<meta name="description" content="${escapeHtml(appName)} — a private, local-first journal of your ChatGPT and Claude conversations.">`,
+    '<meta name="color-scheme" content="light dark">',
+    `<script>${escapeInlineScript(themeInit)}</script>`,
+    `<style>${parts.css.replace(/<\/style/gi, '<\\/style')}</style>`,
+    '<div id="root"></div>',
+    `<script type="module">${escapeInlineScript(parts.js)}</script>`,
+    '',
+  ].join('\n');
+}
+
 export async function bundle(opts: BundleOptions): Promise<void> {
   fs.rmSync(opts.outdir, { recursive: true, force: true });
   fs.mkdirSync(path.join(opts.outdir, 'assets'), { recursive: true });
@@ -129,7 +150,8 @@ export async function bundle(opts: BundleOptions): Promise<void> {
   if (opts.singleFile) {
     const js = app.outputFiles?.find((f) => f.path.endsWith('.js'))?.text ?? '';
     const css = app.outputFiles?.find((f) => f.path.endsWith('.css'))?.text ?? '';
-    fs.writeFileSync(path.join(opts.outdir, 'index.html'), renderHtml(opts, { css, js, singleFile: true }));
+    const html = opts.demo ? renderFragment(opts, { css, js }) : renderHtml(opts, { css, js, singleFile: true });
+    fs.writeFileSync(path.join(opts.outdir, 'index.html'), html);
     fs.rmSync(path.join(opts.outdir, 'assets'), { recursive: true, force: true });
     return;
   }

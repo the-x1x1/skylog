@@ -17,3 +17,5 @@ declare module '*.svg' {
   export default source;
 }
 declare module '*.css';
+declare const __DOWNLOADS_ENABLED__: boolean;
+declare const __AUTOLOAD_SAMPLE__: boolean;

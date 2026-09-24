@@ -11,6 +11,7 @@
     "dev": "tsx scripts/dev.ts",
     "build": "tsx scripts/build.ts",
     "build:single": "tsx scripts/build.ts --single-file",
+    "build:demo": "tsx scripts/build.ts --demo",
     "start": "tsx scripts/serve.ts",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
     "lint": "eslint . --max-warnings=0",

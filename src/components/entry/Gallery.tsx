@@ -185,7 +185,7 @@ export function Gallery({ images, messagesById, selected, onSelect, onJumpToMess
               <Icon name="arrowRight" size={16} />
             </button>
           ) : null}
-          <DownloadImageButton image={current} />
+          {typeof __DOWNLOADS_ENABLED__ !== 'boolean' || __DOWNLOADS_ENABLED__ ? <DownloadImageButton image={current} /> : null}
           {current.available ? <IconButton icon="expand" label="View full size" onClick={() => setLightbox(true)} /> : null}
         </div>
       </div>

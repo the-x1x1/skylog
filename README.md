@@ -177,7 +177,8 @@ That's it. The database name (`conversation-journal`), storage keys (`cj:*`), pa
 | --- | --- |
 | `npm run dev` | Dev server with live reload and the summarizer API |
 | `npm run build` | Production build to `dist/` |
-| `npm run build:single` | Everything inlined into one `dist-single/index.html` |
+| `npm run build:single` | Everything inlined into one `dist-single/index.html` (works from `file://`) |
+| `npm run build:demo` | Hosted demo fragment in `dist-demo/` (sample preloaded, downloads removed) |
 | `npm start` | Serve `dist/` locally (with the summarizer API) |
 | `npm run typecheck` | TypeScript, browser and Node projects |
 | `npm run lint` | ESLint (typescript-eslint, React hooks), zero warnings |
@@ -202,7 +203,7 @@ src/
 server/           local HTTP server and summarizer adapter (Node)
 scripts/          build, dev, serve, fixture generators
 tests/            unit/ (node:test) · e2e/ (Playwright) · helpers/
-docs/             PLAN.md, DECISIONS.md
+docs/             PLAN.md, DECISIONS.md, REVIEW.md (independent review findings and fixes)
 ```
 
 ### Adding an import source

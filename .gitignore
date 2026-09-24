@@ -8,3 +8,4 @@ playwright-report/
 .env.local
 .env.*.local
 .DS_Store
+dist-demo/
