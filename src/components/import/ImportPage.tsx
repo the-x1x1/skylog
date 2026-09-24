@@ -88,9 +88,9 @@ function stageLabel(p: ImportProgress | null): string {
   }
 }
 
-function Stat({ label, value, tone }: { label: string; value: number | string; tone?: 'warn' | 'error' }) {
+function Stat({ label, value, tone, small }: { label: string; value: number | string; tone?: 'warn' | 'error'; small?: boolean }) {
   return (
-    <div className={`stat${tone ? ` stat--${tone}` : ''}`}>
+    <div className={`stat${tone ? ` stat--${tone}` : ''}${small ? ' stat--small' : ''}`}>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
@@ -229,7 +229,11 @@ export function ImportPage() {
             <Stat label="Conversations" value={step.preview.conversationCount.toLocaleString()} />
             <Stat label="Image references" value={step.preview.imageCount === null ? 'unknown' : step.preview.imageCount.toLocaleString()} />
             <Stat label="Image files in export" value={step.preview.imageFilesPresent === null ? 'unknown' : step.preview.imageFilesPresent.toLocaleString()} />
-            <Stat label="Date range" value={step.preview.dateRange.from ? `${formatDate(step.preview.dateRange.from)} – ${formatDate(step.preview.dateRange.to)}` : '—'} />
+            <Stat
+              label="Date range"
+              small
+              value={step.preview.dateRange.from ? `${formatDate(step.preview.dateRange.from)} – ${formatDate(step.preview.dateRange.to)}` : '—'}
+            />
           </dl>
           {step.preview.warnings.map((w, i) => (
             <Notice key={i} tone="warn">
@@ -320,6 +324,7 @@ function Running({ step, onCancel }: { step: Extract<Step, { kind: 'running' }>;
       <dl className="stats">
         <Stat label="Imported" value={c?.imported ?? 0} />
         <Stat label="Updated" value={c?.updated ?? 0} />
+        <Stat label="Already imported" value={c?.duplicates ?? 0} />
         <Stat label="Skipped" value={c?.skipped ?? 0} />
         <Stat label="Failed" value={c?.failed ?? 0} tone={c?.failed ? 'error' : undefined} />
         <Stat label="Images stored" value={`${c?.imagesStored ?? 0} / ${c?.imagesFound ?? 0}`} />
@@ -362,12 +367,17 @@ function Done({ batch, onAnother }: { batch: ImportBatch; onAnother: () => void 
       <dl className="stats">
         <Stat label="Imported" value={c.imported} />
         <Stat label="Updated" value={c.updated} />
-        <Stat label="Skipped (already imported)" value={c.skipped} />
+        <Stat label="Already imported" value={c.duplicates} />
+        {c.skipped ? <Stat label="Skipped (empty)" value={c.skipped} /> : null}
         <Stat label="Failed" value={c.failed} tone={c.failed ? 'error' : undefined} />
         <Stat label="Images stored" value={`${c.imagesStored} of ${c.imagesFound}`} tone={c.imagesMissing ? 'warn' : undefined} />
         {batch.options.generateSummaries ? <Stat label="Summaries" value={`${c.summarized}${c.summaryFailed ? ` · ${c.summaryFailed} failed` : ''}`} tone={c.summaryFailed ? 'warn' : undefined} /> : null}
       </dl>
-      {c.imagesMissing > 0 ? <p className="muted small">{pluralize(c.imagesMissing, 'image')} referenced in conversations weren’t in the export; they show as placeholders.</p> : null}
+      {c.imagesMissing > 0 ? (
+        <p className="muted small">
+          {c.imagesMissing === 1 ? 'One image referenced in a conversation wasn’t in the export; it shows as a placeholder.' : `${c.imagesMissing.toLocaleString()} images referenced in conversations weren’t in the export; they show as placeholders.`}
+        </p>
+      ) : null}
       <div className="import-card__actions">
         <Button variant="ghost" onClick={onAnother}>
           Import another file

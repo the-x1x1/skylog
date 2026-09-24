@@ -187,11 +187,11 @@ export class Db {
     return Array.from(this.raw.objectStoreNames);
   }
 
-  private run<R>(stores: string[], mode: IDBTransactionMode, fn: (tx: Tx) => Promise<R>): Promise<R> {
+  private run<R>(stores: string[], mode: IDBTransactionMode, fn: (tx: Tx) => Promise<R>, durability?: 'relaxed' | 'strict'): Promise<R> {
     return new Promise<R>((resolve, reject) => {
       let tx: IDBTransaction;
       try {
-        tx = this.raw.transaction(stores, mode);
+        tx = durability ? this.raw.transaction(stores, mode, { durability }) : this.raw.transaction(stores, mode);
       } catch (err) {
         reject(err);
         return;
@@ -228,8 +228,12 @@ export class Db {
     return this.run(Array.isArray(stores) ? stores : [stores], 'readonly', fn);
   }
 
-  write<R>(stores: string | string[], fn: (tx: Tx) => Promise<R>): Promise<R> {
-    return this.run(Array.isArray(stores) ? stores : [stores], 'readwrite', fn);
+  /**
+   * `relaxed` durability skips the per-transaction disk flush; used for bulk imports, where the
+   * worst case after a power loss is re-importing the last few conversations.
+   */
+  write<R>(stores: string | string[], fn: (tx: Tx) => Promise<R>, opts: { durability?: 'relaxed' | 'strict' } = {}): Promise<R> {
+    return this.run(Array.isArray(stores) ? stores : [stores], 'readwrite', fn, opts.durability);
   }
 
   close(): void {

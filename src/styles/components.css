@@ -335,6 +335,17 @@ mark,
   align-self: center;
 }
 
+@media (max-width: 767px) {
+  .notice {
+    flex-wrap: wrap;
+  }
+
+  .notice__action {
+    flex-basis: 100%;
+    padding-left: 28px;
+  }
+}
+
 .notice--info {
   background: var(--surface);
   border-color: var(--line);
@@ -578,7 +589,7 @@ mark,
 
 @media (pointer: coarse) {
   .segmented__btn {
-    min-height: 40px;
+    min-height: var(--touch);
   }
 }
 

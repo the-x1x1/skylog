@@ -21,7 +21,7 @@ test('imports a ChatGPT export end to end and skips it on re-import', async ({ p
   await page.locator('#export-file').setInputFiles(path.join(FIXTURES, 'chatgpt-sample-export.zip'));
   await page.getByRole('button', { name: 'Import 2 conversations' }).click();
   await expect(page.getByRole('heading', { name: 'Import complete' })).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('.stat', { hasText: 'Skipped (already imported)' }).locator('dd')).toHaveText('2');
+  await expect(page.locator('.stat', { hasText: 'Already imported' }).locator('dd')).toHaveText('2');
   await page.goto('/#/');
   await expect(page.locator('.entry-card')).toHaveCount(2);
 });

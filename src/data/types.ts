@@ -157,6 +157,8 @@ export interface Collection {
 export interface ImportIssue {
   level: 'warning' | 'error';
   sourceFile: string;
+  /** 1-based position of the record in the source file, when known. */
+  recordIndex?: number;
   conversationId: string | null;
   title: string | null;
   reason: string;
@@ -166,6 +168,9 @@ export interface ImportCounts {
   total: number;
   imported: number;
   updated: number;
+  /** Already imported and unchanged. */
+  duplicates: number;
+  /** Records that can't become an entry (e.g. empty conversations). */
   skipped: number;
   failed: number;
   imagesFound: number;
@@ -221,6 +226,7 @@ export function emptyCounts(): ImportCounts {
     total: 0,
     imported: 0,
     updated: 0,
+    duplicates: 0,
     skipped: 0,
     failed: 0,
     imagesFound: 0,

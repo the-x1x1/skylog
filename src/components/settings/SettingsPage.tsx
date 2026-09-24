@@ -132,12 +132,12 @@ function ProviderSettings() {
         </div>
       ) : null}
 
-      <BackfillSummaries />
+      <BackfillSummaries ready={config.kind !== 'none' && !!status?.ok} />
     </section>
   );
 }
 
-function BackfillSummaries() {
+function BackfillSummaries({ ready }: { ready: boolean }) {
   const { entries } = useAppData();
   const { config } = useSummaryConfig();
   const provider = useMemo(() => createProvider(config), [config]);
@@ -145,7 +145,7 @@ function BackfillSummaries() {
   const [run, setRun] = useState<{ done: number; total: number; failed: number; current: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  if (!provider || (missing.length === 0 && !run)) return null;
+  if (!provider || (missing.length === 0 && !run) || (!ready && !run)) return null;
 
   const start = async () => {
     const list = [...missing];

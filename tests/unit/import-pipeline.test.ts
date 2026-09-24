@@ -19,7 +19,7 @@ const OPTS: ImportOptions = { generateSummaries: false, importImages: true, skip
 async function importZip(files: Record<string, string | Uint8Array>, source: 'chatgpt' | 'claude', opts: Partial<ImportOptions> = {}, extra: Partial<Parameters<typeof runImport>[0]> = {}) {
   const manifest = await zipArchive(`${source}.zip`, files);
   const progress: ImportProgress[] = [];
-  const batch = await runImport({ manifest, importer: importerFor(source), options: { ...OPTS, ...opts }, onProgress: (p) => progress.push(p), ...extra });
+  const batch = await runImport({ manifest, importer: importerFor(source), options: { ...OPTS, ...opts }, onProgress: (p) => progress.push(p), progressIntervalMs: 0, ...extra });
   return { batch, progress };
 }
 
@@ -80,6 +80,15 @@ describe('import pipeline', () => {
     assert.equal(entry?.coverImageId, (await getEntryView(entry!.id))!.images.find((i) => i.available)?.id);
   });
 
+  it('throttles progress events by default but always delivers the final state', async () => {
+    const manifest = await zipArchive('t.zip', chatgptEdgeCaseFiles());
+    const events: ImportProgress[] = [];
+    await runImport({ manifest, importer: importerFor('chatgpt'), options: OPTS, onProgress: (p) => events.push(p) });
+    assert.ok(events.length < 7);
+    assert.equal(events.at(-1)?.stage, 'done');
+    assert.equal(events.at(-1)?.processed, 7);
+  });
+
   it('reports real, monotonic progress ending in done', async () => {
     const { progress } = await importZip(chatgptEdgeCaseFiles(), 'chatgpt');
     assert.equal(progress[0]?.stage, 'parsing');
@@ -96,6 +105,8 @@ describe('import pipeline', () => {
     assert.equal(batch.counts.imported, 3);
     assert.equal(batch.counts.failed, 3);
     assert.equal(batch.counts.skipped, 1);
+    assert.equal(batch.counts.duplicates, 0);
+    assert.equal(batch.issues.find((i) => i.conversationId === null)?.recordIndex, 4);
     assert.equal(batch.counts.imagesFound, 4);
     assert.equal(batch.counts.imagesStored, 3);
     assert.ok(batch.issues.some((i) => i.level === 'error' && i.conversationId === 'no-mapping'));
@@ -107,7 +118,8 @@ describe('import pipeline', () => {
     await importZip(sampleChatGptExportFiles(), 'chatgpt');
     const before = await snapshot();
     const { batch } = await importZip(sampleChatGptExportFiles(), 'chatgpt');
-    assert.equal(batch.counts.skipped, 2);
+    assert.equal(batch.counts.duplicates, 2);
+    assert.equal(batch.counts.skipped, 0);
     assert.equal(batch.counts.imported, 0);
     const after = await snapshot();
     assert.deepEqual(after.messages, before.messages);
@@ -145,7 +157,7 @@ describe('import pipeline', () => {
 
     const { batch } = await importZip(files, 'chatgpt');
     assert.equal(batch.counts.updated, 1);
-    assert.equal(batch.counts.skipped, 1);
+    assert.equal(batch.counts.duplicates, 1);
     const view = (await getEntryView(entryId))!;
     assert.equal(view.entry.title, 'My own title');
     assert.equal(view.derived.title, 'AI title');
@@ -170,6 +182,7 @@ describe('import pipeline', () => {
       importer: importerFor('chatgpt'),
       options: OPTS,
       signal: controller.signal,
+      progressIntervalMs: 0,
       onProgress: (p) => {
         saved = p.counts.imported;
         if (p.counts.imported === 1) controller.abort();

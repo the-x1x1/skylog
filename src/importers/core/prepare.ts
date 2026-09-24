@@ -279,7 +279,7 @@ export async function persistPrepared(
     if (opts.markPending && needsSummary) entry = { ...entry, summaryStatus: 'pending', summaryError: null };
     await tx.put('entries', entry);
     return { outcome: !existing ? 'imported' : sameRevision ? 'unchanged' : 'updated', entryId: baseEntry.id, needsSummary };
-  });
+  }, { durability: 'relaxed' });
   if (result.outcome !== 'skipped') {
     notifyChange({ stores: ['conversations', 'messages', 'images', 'entries'], conversationIds: [conversation.id] });
   }

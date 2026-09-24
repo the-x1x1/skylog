@@ -375,3 +375,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 32px 0 8px;
+}

@@ -39,3 +39,25 @@ test('mobile theme toggle lives in the top bar', async ({ page }) => {
   await page.locator('.mobile-top').getByRole('button', { name: /Switch to/ }).click();
   await expect(page.locator('html')).not.toHaveAttribute('data-theme', before ?? '');
 });
+
+test('touch targets are at least 44px on mobile', async ({ page }) => {
+  await loadSampleJournal(page);
+  const check = () =>
+    page.evaluate(() => {
+      const small: string[] = [];
+      for (const el of Array.from(document.querySelectorAll('button, .btn, .icon-btn, .mobile-nav__item, .segmented__btn, .prov__chip, .gallery__thumb'))) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || el.closest('[aria-hidden="true"]')) continue;
+        // Inline text links inside sentences are exempt (WCAG 2.5.8); these are all standalone controls.
+        if (Math.max(r.height, r.width) < 44 || Math.min(r.height, r.width) < 24) small.push(`${el.className} ${Math.round(r.width)}×${Math.round(r.height)}`);
+        else if (r.height < 44 && !el.classList.contains('prov__chip') && !el.classList.contains('text-btn')) small.push(`${el.className} ${Math.round(r.width)}×${Math.round(r.height)}`);
+      }
+      return small;
+    });
+  expect(await check()).toEqual([]);
+  await openEntry(page, 'Tabletop hologram display');
+  await page.getByRole('button', { name: 'Show full transcript' }).click();
+  expect(await check()).toEqual([]);
+  await page.goto('/#/search?q=walnut');
+  expect(await check()).toEqual([]);
+});

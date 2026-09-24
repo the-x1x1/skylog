@@ -25,6 +25,7 @@ export function useLiveQuery<T>(query: () => Promise<T>, deps: readonly unknown[
     let again = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let lastRun = 0;
+    let lastDuration = 0;
 
     const run = async () => {
       if (running) {
@@ -35,6 +36,7 @@ export function useLiveQuery<T>(query: () => Promise<T>, deps: readonly unknown[
       lastRun = Date.now();
       try {
         const data = await queryRef.current();
+        lastDuration = Date.now() - lastRun;
         if (!cancelled) setState({ data, error: null, loading: false });
       } catch (err) {
         if (!cancelled) setState((s) => ({ data: s.data, error: err instanceof Error ? err : new Error(String(err)), loading: false }));
@@ -46,9 +48,12 @@ export function useLiveQuery<T>(query: () => Promise<T>, deps: readonly unknown[
         }
       }
     };
+    // Re-run at most every 250 ms, and back off further when the query itself is slow, so a
+    // long import in a worker isn't competing with constant re-reads of the same stores.
     const schedule = () => {
       if (timer) return;
-      const wait = Math.max(0, 250 - (Date.now() - lastRun));
+      const interval = Math.max(250, lastDuration * 6);
+      const wait = Math.max(0, interval - (Date.now() - lastRun));
       timer = setTimeout(() => {
         timer = null;
         void run();

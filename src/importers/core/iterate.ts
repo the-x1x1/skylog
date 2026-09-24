@@ -43,6 +43,7 @@ export async function* iterateRecords(
       const issue: ImportIssue = {
         level: err instanceof SkipConversation ? err.level : 'error',
         sourceFile,
+        recordIndex: i + 1,
         conversationId: id,
         title,
         reason: err instanceof Error ? err.message : String(err),

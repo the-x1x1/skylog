@@ -27,6 +27,7 @@ function summaryLine(b: ImportBatch): string {
   const c = b.counts;
   const parts = [`${c.imported} imported`];
   if (c.updated) parts.push(`${c.updated} updated`);
+  if (c.duplicates) parts.push(`${c.duplicates} already imported`);
   if (c.skipped) parts.push(`${c.skipped} skipped`);
   if (c.failed) parts.push(`${c.failed} failed`);
   parts.push(`${c.imagesStored}/${c.imagesFound} images`);
@@ -122,6 +123,7 @@ export function ImportReportPage({ batchId }: { batchId: string }) {
           ['In export', c.total],
           ['Imported', c.imported],
           ['Updated', c.updated],
+          ['Already imported', c.duplicates ?? 0],
           ['Skipped', c.skipped],
           ['Failed', c.failed],
           ['Images found', c.imagesFound],
@@ -164,7 +166,7 @@ export function ImportReportPage({ batchId }: { batchId: string }) {
               <Icon name={i.level === 'error' ? 'alert' : 'info'} size={16} />
               <div>
                 <p className="issue__title">
-                  {i.title ?? 'Untitled conversation'}
+                  {i.title ?? (i.recordIndex ? `Record #${i.recordIndex}` : 'Untitled conversation')}
                   {i.conversationId ? <span className="issue__id mono"> {i.conversationId}</span> : null}
                 </p>
                 <p className="issue__reason">{i.reason}</p>

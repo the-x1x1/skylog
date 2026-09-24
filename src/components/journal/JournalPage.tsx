@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppData } from '../../app/providers/data';
 import { href, navigate, useLocation, withQuery } from '../../app/router';
 import { BRAND } from '../../config/brand';
@@ -13,6 +13,8 @@ import { Button, LinkButton, Notice, Spinner } from '../shared/ui';
 import { EntryCard } from './EntryCard';
 
 type SortKey = 'newest' | 'oldest' | 'imported';
+
+const PAGE_SIZE = 60;
 
 function sortEntries(list: EffectiveEntry[], sort: SortKey): EffectiveEntry[] {
   const copy = [...list];
@@ -100,14 +102,28 @@ export function JournalPage() {
     [entries, source, tag, collectionId, sort],
   );
 
+  // Render cards in pages as the reader scrolls; thousands of entries stay fast.
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => setLimit(PAGE_SIZE), [source, tag, collectionId, sort]);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((items) => {
+      if (items.some((i) => i.isIntersecting)) setLimit((l) => l + PAGE_SIZE);
+    }, { rootMargin: '800px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  });
+
   const groups = useMemo(() => {
     const map = new Map<string, EffectiveEntry[]>();
-    for (const e of filtered) {
+    for (const e of filtered.slice(0, limit)) {
       const k = monthKey(sort === 'imported' ? e.importedAt : e.chatDate);
       map.set(k, [...(map.get(k) ?? []), e]);
     }
     return Array.from(map);
-  }, [filtered, sort]);
+  }, [filtered, sort, limit]);
 
   if (entriesLoading) {
     return (
@@ -215,6 +231,13 @@ export function JournalPage() {
           </section>
         ))
       )}
+      {filtered.length > limit ? (
+        <div ref={sentinel} className="load-more">
+          <Button variant="ghost" onClick={() => setLimit((l) => l + PAGE_SIZE)}>
+            Show more entries ({(filtered.length - limit).toLocaleString()} left)
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

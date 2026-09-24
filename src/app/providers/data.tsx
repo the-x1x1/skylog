@@ -3,6 +3,7 @@ import { getDb, getStorageMode, type StorageMode } from '../../data/db/database'
 import { useLiveQuery } from '../../data/hooks';
 import { listCollections, listEntries } from '../../data/repositories/entries';
 import type { Collection, EffectiveEntry } from '../../data/types';
+import { warmSearchWhenIdle } from '../../search/client';
 
 interface AppData {
   ready: boolean;
@@ -25,6 +26,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       () => {
         setStorageMode(getStorageMode());
         setReady(true);
+        warmSearchWhenIdle();
       },
       (err) => setFatal(err instanceof Error ? err.message : String(err)),
     );

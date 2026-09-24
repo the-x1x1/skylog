@@ -18,9 +18,12 @@ export interface RunImportArgs {
   summarizer?: EntrySummarizer | null;
   batchId?: string;
   isSample?: boolean;
+  /** Minimum time between progress events (0 = every step). */
+  progressIntervalMs?: number;
 }
 
 const MAX_REPORTED_ISSUES = 2000;
+const PROGRESS_INTERVAL_MS = 100;
 
 /**
  * Runs a full import: parse → persist (one conversation per transaction, so a failure or cancel
@@ -51,7 +54,17 @@ export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
   let summaryDone = 0;
   let lastIssue: ImportIssue | null = null;
 
-  const emit = (stage: ImportProgress['stage'], message: string | null = null) =>
+  // Progress is throttled (~10/s) so the UI never falls behind the real state; stage changes
+  // and the final state are always delivered.
+  const progressInterval = args.progressIntervalMs ?? PROGRESS_INTERVAL_MS;
+  let lastEmit = 0;
+  let lastStage: ImportProgress['stage'] | null = null;
+  const emit = (stage: ImportProgress['stage'], message: string | null = null) => {
+    const now = Date.now();
+    const final = stage === 'done' || stage === 'cancelled' || stage === 'failed';
+    if (!final && stage === lastStage && now - lastEmit < progressInterval) return;
+    lastEmit = now;
+    lastStage = stage;
     onProgress?.({
       stage,
       batchId: batch.id,
@@ -64,6 +77,7 @@ export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
       lastIssue,
       message,
     });
+  };
   const addIssue = (issue: ImportIssue) => {
     lastIssue = issue;
     if (batch.issues.length < MAX_REPORTED_ISSUES) batch.issues.push(issue);
@@ -103,7 +117,7 @@ export async function runImport(args: RunImportArgs): Promise<ImportBatch> {
         });
         const result = await persistPrepared(prepared, { skipExisting: options.skipExisting, markPending: !!summarizer });
         if (result.outcome === 'skipped') {
-          counts.skipped++;
+          counts.duplicates++;
         } else {
           if (result.outcome === 'imported') counts.imported++;
           else counts.updated++;

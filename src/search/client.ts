@@ -6,6 +6,8 @@ import type { SearchFilters, SearchResults } from './types';
 
 export interface SearchClient {
   search(query: string, filters?: SearchFilters): Promise<SearchResults>;
+  /** Builds the index ahead of the first search. */
+  warm(): void;
 }
 
 class WorkerSearchClient implements SearchClient {
@@ -21,6 +23,10 @@ class WorkerSearchClient implements SearchClient {
       if (msg.type === 'results') p.resolve(msg.results);
       else if (msg.type === 'error') p.reject(new Error(msg.message));
     };
+  }
+
+  warm() {
+    /* the worker builds its index as soon as it starts */
   }
 
   search(query: string, filters: SearchFilters = {}): Promise<SearchResults> {
@@ -40,12 +46,23 @@ class InlineSearchClient implements SearchClient {
       else if (e.conversationIds?.length) void this.index.updateConversations(e.conversationIds);
     });
   }
+  warm() {
+    if (!this.index.status().ready) void this.index.rebuild();
+  }
   search(query: string, filters: SearchFilters = {}) {
     return this.index.search(query, filters);
   }
 }
 
 let client: SearchClient | null = null;
+
+/** Starts building the search index when the browser is idle, so the first search is instant. */
+export function warmSearchWhenIdle(): void {
+  const start = () => getSearchClient().warm();
+  const ric = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+  if (ric) ric(start, { timeout: 4000 });
+  else setTimeout(start, 1500);
+}
 
 /** Lazily starts search (worker when possible). Call after the database is open. */
 export function getSearchClient(): SearchClient {
