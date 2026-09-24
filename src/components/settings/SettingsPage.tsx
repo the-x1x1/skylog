@@ -257,7 +257,7 @@ function StorageLine() {
   );
 }
 
-function BackupControls() {
+function BackupControls({ empty }: { empty: boolean }) {
   const [busy, setBusy] = useState<null | 'backup' | 'restore'>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
@@ -305,7 +305,7 @@ function BackupControls() {
     <div className="backup">
       <div className="settings-actions">
         {canDownload ? (
-          <Button variant="secondary" icon="download" onClick={backup} busy={busy === 'backup'} disabled={busy !== null}>
+          <Button variant="secondary" icon="download" onClick={backup} busy={busy === 'backup'} disabled={busy !== null || empty}>
             Back up journal
           </Button>
         ) : null}
@@ -360,7 +360,7 @@ function DataSettings() {
           : 'This browser is blocking local storage, so data only lasts until you close the tab.'}
       </p>
       {storageMode === 'persistent' ? <StorageLine /> : null}
-      <BackupControls />
+      <BackupControls empty={entries.length === 0} />
       <div className="settings-actions">
         {samples > 0 ? (
           <Button
