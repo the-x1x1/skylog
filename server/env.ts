@@ -7,16 +7,26 @@ import path from 'node:path';
  * Only keys prefixed with PUBLIC_ are ever exposed to browser code (see scripts/lib/bundle.ts).
  */
 export function loadEnv(root: string = process.cwd()): Record<string, string> {
+  return { ...loadEnvFiles(root), ...processEnv() };
+}
+
+/** Only the values from `.env` and `.env.local` in `root` (.env.local wins). */
+export function loadEnvFiles(root: string): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const file of ['.env', '.env.local']) {
     const full = path.join(root, file);
     if (!fs.existsSync(full)) continue;
     Object.assign(merged, parseEnv(fs.readFileSync(full, 'utf8')));
   }
-  for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value === 'string') merged[key] = value;
-  }
   return merged;
+}
+
+export function processEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === 'string') out[key] = value;
+  }
+  return out;
 }
 
 export function parseEnv(text: string): Record<string, string> {

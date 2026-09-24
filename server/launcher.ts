@@ -10,8 +10,7 @@
  */
 import path from 'node:path';
 import * as sea from 'node:sea';
-import { openBrowser, resolvePort, startDesktopServer } from './desktop';
-import { loadEnv } from './env';
+import { DEFAULT_PORT, desktopEnv, openBrowser, resolvePort, startDesktopServer } from './desktop';
 import { directoryFiles, type StaticFiles } from './http';
 import { getLlmStatus } from './llm-adapter';
 
@@ -55,7 +54,7 @@ async function fail(lines: string[]): Promise<void> {
 async function main(): Promise<void> {
   const packaged = sea.isSea();
   const baseDir = packaged ? path.dirname(process.execPath) : process.cwd();
-  const env: Record<string, string> = { PUBLIC_APP_NAME: NAME, ...loadEnv(baseDir) };
+  const env = desktopEnv(baseDir, NAME);
   const noBrowser = process.argv.includes('--no-browser') || /^(1|true|yes)$/i.test(env.NO_BROWSER ?? '');
   const files = packaged ? embeddedFiles() : directoryFiles(env.APP_DIST_DIR ?? path.join(baseDir, 'dist'));
   const envFile = path.join(baseDir, '.env.local');
@@ -71,8 +70,8 @@ async function main(): Promise<void> {
 
   if (result.kind === 'port-busy') {
     return fail([
-      `${NAME} can't start: port ${port} is being used by another program.`,
-      'Close that program and open this one again.',
+      `${NAME} can't start: port ${port} is in use by another program or reserved by Windows.`,
+      'Close the other program (or restart your computer) and open this one again.',
       `Or pick another port by adding a line like PORT=4180 to ${envFile}.`,
       'Note: your journal is stored per address, so a new port starts with an empty journal.',
       'Move entries across with Settings → Back up journal / Restore from backup.',
@@ -90,6 +89,7 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`  ${NAME} ${VERSION}`);
   console.log(`  Your journal: ${result.url}`);
+  if (port !== DEFAULT_PORT) console.log(`  (Port ${port} is set by PORT. The journal is stored per port, so other ports show different journals.)`);
   console.log(
     llm.available
       ? `  Summaries: ready (${llm.vendor}, ${llm.model})`

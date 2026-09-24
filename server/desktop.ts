@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type http from 'node:http';
+import { loadEnvFiles, processEnv } from './env';
 import { APP_ID, createAppServer, type StaticFiles } from './http';
 
 /**
@@ -22,6 +23,22 @@ export interface StartOptions {
   env: Record<string, string | undefined>;
   port: number;
   version: string;
+}
+
+/**
+ * Settings for the desktop program. Unlike the dev server, the .env.local file next to the program
+ * wins over environment variables: it is what the user edits, and a system-wide PORT left behind by
+ * another tool must not silently move the journal to a different (empty) origin.
+ */
+export function desktopEnv(baseDir: string, appName: string, env: Record<string, string> = processEnv()): Record<string, string> {
+  return { PUBLIC_APP_NAME: appName, ...env, ...loadEnvFiles(baseDir) };
+}
+
+/** Listen errors that mean "this port can't be used right now" rather than a bug. */
+export function isPortUnavailable(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  // EACCES: Windows reserves port ranges for Hyper-V / WSL, and binding inside one is refused.
+  return code === 'EADDRINUSE' || code === 'EACCES';
 }
 
 export function appUrl(port: number): string {
@@ -73,7 +90,7 @@ export async function startDesktopServer(opts: StartOptions): Promise<StartResul
     await listen(server, opts.port);
     return { kind: 'started', url: appUrl(opts.port), server };
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
+    if (!isPortUnavailable(err)) throw err;
     if (await isAppRunningOn(opts.port)) return { kind: 'already-running', url: appUrl(opts.port) };
     return { kind: 'port-busy', port: opts.port };
   }

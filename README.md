@@ -12,7 +12,7 @@ Everything stays on your device. There is no account, no cloud copy and no telem
 
 **Windows:** download `Skylog-<version>-windows-x64.exe` from the [latest release](https://github.com/the-x1x1/skylog/releases/latest) and double-click it. A small window opens and your journal opens in your browser at `http://localhost:4173`. Keep the window open while you use the journal, and close it to quit.
 
-- The program isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC". Choose **More info**, then **Run anyway**.
+- The program isn't code-signed yet, so your browser may warn that the file isn't commonly downloaded (choose **Keep**), and Windows SmartScreen may say "Windows protected your PC" (choose **More info**, then **Run anyway**). On Windows 11 with Smart App Control on, unsigned programs are blocked outright; use the `.html` file instead.
 - Your entries are saved in your browser, not in the program, so replacing the `.exe` with a newer version keeps your journal. Clearing the browser's site data for `localhost` deletes the journal; **Settings → Back up journal** keeps a copy.
 - To turn on summaries, put a `.env.local` file next to the `.exe` (see [Local server setup](#local-server-setup)) and start the program again.
 

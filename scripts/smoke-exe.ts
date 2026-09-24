@@ -51,7 +51,7 @@ try {
     check(exited === null, `The executable exited early (code ${exited}).`);
     page = await get(`${base}/`).catch(() => null);
   }
-  check(page, 'The executable did not start serving within 30 seconds.');
+  check(page, 'The executable did not start serving the app in time.');
   check(page.status === 200 && page.body.includes('<div id="root"></div>'), 'The app page was not served.');
 
   const script = page.body.match(/assets\/app-[A-Za-z0-9]+\.js/)?.[0];

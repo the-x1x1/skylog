@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
-import { DEFAULT_PORT, isAppRunningOn, resolvePort, startDesktopServer } from '../../server/desktop';
+import { DEFAULT_PORT, desktopEnv, isAppRunningOn, isPortUnavailable, resolvePort, startDesktopServer } from '../../server/desktop';
 import { APP_ID, createAppServer, directoryFiles, type StaticFiles } from '../../server/http';
 
 const memoryFiles = (files: Record<string, string>): StaticFiles => ({
@@ -72,6 +72,24 @@ describe('desktop program', () => {
     assert.equal(resolvePort({ PORT: ' 4180 ' }), 4180);
     assert.throws(() => resolvePort({ PORT: 'abc' }), /PORT must be a number/);
     assert.throws(() => resolvePort({ PORT: '70000' }), /PORT must be a number/);
+  });
+
+  it('lets the .env.local next to the program win over a stray system-wide PORT', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cj-exe-'));
+    assert.equal(desktopEnv(dir, 'Test', { PORT: '3000' }).PORT, '3000', 'process env applies when there is no file');
+    fs.writeFileSync(path.join(dir, '.env.local'), 'PORT=4180\nANTHROPIC_API_KEY=sk-test\n');
+    const env = desktopEnv(dir, 'Test', { PORT: '3000', PATH: '/bin' });
+    assert.equal(env.PORT, '4180');
+    assert.equal(env.ANTHROPIC_API_KEY, 'sk-test');
+    assert.equal(env.PATH, '/bin');
+    assert.equal(env.PUBLIC_APP_NAME, 'Test');
+  });
+
+  it('treats a port reserved by Windows (EACCES) like a busy one', () => {
+    assert.equal(isPortUnavailable(Object.assign(new Error('x'), { code: 'EADDRINUSE' })), true);
+    assert.equal(isPortUnavailable(Object.assign(new Error('x'), { code: 'EACCES' })), true);
+    assert.equal(isPortUnavailable(Object.assign(new Error('x'), { code: 'ENOTFOUND' })), false);
+    assert.equal(isPortUnavailable(null), false);
   });
 
   it('starts once, and a second launch finds the running copy instead of failing', async () => {
