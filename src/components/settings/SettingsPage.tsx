@@ -257,12 +257,17 @@ function StorageLine() {
   );
 }
 
-function BackupControls({ empty }: { empty: boolean }) {
-  const [busy, setBusy] = useState<null | 'backup' | 'restore'>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [pending, setPending] = useState<File | null>(null);
+type BackupBusy = null | 'backup' | 'restore';
+interface BackupButtonProps {
+  empty: boolean;
+  busy: BackupBusy;
+  setBusy: (b: BackupBusy) => void;
+  setProgress: (p: { done: number; total: number } | null) => void;
+  setMessage: (m: { tone: 'ok' | 'error'; text: string } | null) => void;
+}
 
+/** Top-level so demo builds (downloads compiled out) drop the save code along with the button. */
+function BackupButton({ empty, busy, setBusy, setProgress, setMessage }: BackupButtonProps) {
   const backup = async () => {
     setBusy('backup');
     setMessage(null);
@@ -284,6 +289,18 @@ function BackupControls({ empty }: { empty: boolean }) {
       setProgress(null);
     }
   };
+  return (
+    <Button variant="secondary" icon="download" onClick={backup} busy={busy === 'backup'} disabled={busy !== null || empty}>
+      Back up journal
+    </Button>
+  );
+}
+
+function BackupControls({ empty }: { empty: boolean }) {
+  const [busy, setBusy] = useState<BackupBusy>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [pending, setPending] = useState<File | null>(null);
 
   const restore = async (file: File) => {
     setBusy('restore');
@@ -300,14 +317,11 @@ function BackupControls({ empty }: { empty: boolean }) {
     }
   };
 
-  const canDownload = typeof __DOWNLOADS_ENABLED__ !== 'boolean' || __DOWNLOADS_ENABLED__;
   return (
     <div className="backup">
       <div className="settings-actions">
-        {canDownload ? (
-          <Button variant="secondary" icon="download" onClick={backup} busy={busy === 'backup'} disabled={busy !== null || empty}>
-            Back up journal
-          </Button>
+        {typeof __DOWNLOADS_ENABLED__ !== 'boolean' || __DOWNLOADS_ENABLED__ ? (
+          <BackupButton empty={empty} busy={busy} setBusy={setBusy} setProgress={setProgress} setMessage={setMessage} />
         ) : null}
         <input
           id="restore-file"
