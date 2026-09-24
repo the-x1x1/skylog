@@ -15,7 +15,7 @@ let storageMode: StorageMode = 'persistent';
 let factoryOverride: IDBFactory | null = null;
 
 /** Tests (and the in-memory fallback) can point the app at a different IndexedDB implementation. */
-export function useIndexedDbFactory(factory: IDBFactory | null, mode: StorageMode = 'persistent') {
+export function setIndexedDbFactory(factory: IDBFactory | null, mode: StorageMode = 'persistent') {
   factoryOverride = factory;
   storageMode = mode;
   setBroadcastEnabled(mode === 'persistent');

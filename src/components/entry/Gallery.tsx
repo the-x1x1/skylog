@@ -64,6 +64,20 @@ export function Gallery({ images, messagesById, selected, onSelect, onJumpToMess
   const count = images.length;
   const current = images[Math.min(selected, count - 1)];
 
+  const settleTimer = useRef<number | undefined>(undefined);
+  const programmaticTimer = useRef<number | undefined>(undefined);
+  const firstSync = useRef(true);
+
+  // Timers must never outlive the gallery: a late "scroll settled" callback would otherwise
+  // select an image (and rewrite the URL) after the user has navigated away.
+  useEffect(
+    () => () => {
+      window.clearTimeout(settleTimer.current);
+      window.clearTimeout(programmaticTimer.current);
+    },
+    [],
+  );
+
   // Keep the scroll-snap track in sync with the selected image.
   useEffect(() => {
     const track = trackRef.current;
@@ -71,12 +85,15 @@ export function Gallery({ images, messagesById, selected, onSelect, onJumpToMess
     const target = selected * track.clientWidth;
     if (Math.abs(track.scrollLeft - target) > 4) {
       programmatic.current = true;
-      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      track.scrollTo({ left: target, behavior: reduce ? 'auto' : 'smooth' });
-      window.setTimeout(() => {
+      window.clearTimeout(settleTimer.current);
+      const instant = firstSync.current || matchMedia('(prefers-reduced-motion: reduce)').matches;
+      track.scrollTo({ left: target, behavior: instant ? 'auto' : 'smooth' });
+      window.clearTimeout(programmaticTimer.current);
+      programmaticTimer.current = window.setTimeout(() => {
         programmatic.current = false;
-      }, 450);
+      }, instant ? 50 : 600);
     }
+    firstSync.current = false;
     setPromptExpanded(false);
   }, [selected]);
 
@@ -84,11 +101,12 @@ export function Gallery({ images, messagesById, selected, onSelect, onJumpToMess
   const onScroll = useCallback(() => {
     const track = trackRef.current;
     if (!track || programmatic.current) return;
-    window.clearTimeout((track as unknown as { _t?: number })._t);
-    (track as unknown as { _t?: number })._t = window.setTimeout(() => {
+    window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(() => {
+      if (programmatic.current) return;
       const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
       if (i !== selected && i >= 0 && i < count) onSelect(i);
-    }, 90);
+    }, 120);
   }, [selected, count, onSelect]);
 
   const go = (delta: number) => onSelect((selected + delta + count) % count);

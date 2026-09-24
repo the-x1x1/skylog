@@ -56,6 +56,7 @@ export function SearchPage() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const pendingEnter = useRef(false);
   const mobileInput = useRef<HTMLInputElement>(null);
   useDocumentTitle(q ? `Search: ${q}` : 'Search');
 
@@ -102,6 +103,13 @@ export function SearchPage() {
     };
   }, [debounced, filters, ready]);
 
+  // Enter pressed while results were still loading: open the first fresh result once it arrives.
+  useEffect(() => {
+    if (!pendingEnter.current || !results || searching || results.query !== q.trim()) return;
+    pendingEnter.current = false;
+    resultsRef.current?.querySelector<HTMLElement>('[data-result-index="0"]')?.click();
+  }, [results, searching, q]);
+
   // Keyboard: ↓ from the search field into results, ↑/↓ between results, Esc back / clear.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -120,9 +128,11 @@ export function SearchPage() {
         e.preventDefault();
         if (idx === 0) (isMobile ? mobileInput.current : document.querySelector<HTMLInputElement>('.sidebar [data-global-search]'))?.focus();
         else focusAt(idx - 1);
-      } else if (e.key === 'Enter' && inInput && items[0]) {
+      } else if (e.key === 'Enter' && inInput) {
         e.preventDefault();
-        items[0].click();
+        // Don't open a result from a previous query: wait for this query's results.
+        if (results && results.query === q.trim() && !searching) items[0]?.click();
+        else pendingEnter.current = true;
       } else if (e.key === 'Escape') {
         if (idx !== null) {
           e.preventDefault();

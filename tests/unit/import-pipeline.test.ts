@@ -11,7 +11,7 @@ import type { ImportProgress } from '../../src/importers/core/types';
 import { importerFor } from '../../src/importers/registry';
 import { applySummary, makeEntrySummarizer } from '../../src/summarization/service';
 import type { JournalSummary, SummaryProvider } from '../../src/summarization/types';
-import { chatgptEdgeCaseFiles, claudeEdgeCaseFiles } from '../helpers/fixtures';
+import { chatgptEdgeCaseFiles } from '../helpers/fixtures';
 import { freshDb, zipArchive } from '../helpers/db';
 
 const OPTS: ImportOptions = { generateSummaries: false, importImages: true, skipExisting: true, autoTag: true };

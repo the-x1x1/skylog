@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { IDBFactory } from 'fake-indexeddb';
-import { DB_NAME, getDb } from '../../src/data/db/database';
+import { DB_NAME, getDb, setIndexedDbFactory } from '../../src/data/db/database';
 import { Db } from '../../src/data/db/idb';
 import { ALL_STORES, MIGRATIONS, SCHEMA_VERSION } from '../../src/data/migrations';
 import { applyEdits, deleteAllData, deleteEntry, getBlob, getEntryView, listEntries, saveEntryEdits } from '../../src/data/repositories/entries';
@@ -9,7 +9,6 @@ import type { JournalEntry } from '../../src/data/types';
 import { loadSampleJournal } from '../../src/fixtures/sample-journal';
 import { applySummary } from '../../src/summarization/service';
 import { freshDb } from '../helpers/db';
-import { useIndexedDbFactory } from '../../src/data/db/database';
 
 describe('schema', () => {
   beforeEach(freshDb);
@@ -36,7 +35,7 @@ describe('migrations', () => {
     );
     v1.close();
 
-    useIndexedDbFactory(factory);
+    setIndexedDbFactory(factory);
     const db = await getDb();
     assert.equal(db.version, SCHEMA_VERSION);
     const entry = await db.read('entries', (tx) => tx.get<JournalEntry>('entries', 'entry:legacy'));
