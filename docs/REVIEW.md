@@ -25,3 +25,16 @@ The review also confirmed these as sound:
 - Static serving blocks path traversal.
 - API keys never reach the browser.
 - There is no `dangerouslySetInnerHTML`; SVGs render only through `<img>`.
+
+## Second pass
+
+The reviewer verified the fixes: 11 of 13 were fully fixed, and #3 and #9 were partial. It also found six issues introduced by the fixes. All are now resolved, with tests under "second review pass" in `tests/unit/review-regressions.test.ts`.
+
+| # | Finding | Fix |
+| --- | --- | --- |
+| N1 | Where the browser denies the Locks API (sandboxed frames), imports and summaries failed. | `withLock` runs the work without a lock when the lock request itself is refused. |
+| N2 | The older-copy guard could block real updates: no timestamps, or a ChatGPT branch switch (later `update_time`, earlier last message). | The export's update time wins. Nothing is judged older without comparable timestamps. Turning off "Skip already imported" re-imports everything. |
+| N3 | Recovery could mark live work in another tab as interrupted. | Each record is settled while holding its own lock, taken only if free. Without Web Locks, only clearly stale work is settled (imports older than 12 h, summaries older than 1 h). |
+| N4 | A crashed import worker left records "running"/"pending" until reload. | Recovery also runs after an import session fails. |
+| N5 | In dev (React StrictMode), the finished-import report could be cleared on arrival. | The reset happens when you leave the Import page, not on unmount. |
+| N6 | Already-imported Claude conversations never gained the pasted text. | The content revision includes attachment text and a parser version, so a re-import refreshes them. |

@@ -14,7 +14,7 @@ import { sampleChatGptExportFiles, sampleClaudeExportFiles } from '../../src/fix
 import { parseClaudeConversation } from '../../src/importers/claude/parse';
 import { LIMITS } from '../../src/importers/core/archive';
 import { runImport } from '../../src/importers/core/pipeline';
-import { conversationIdFor, entryIdFor } from '../../src/importers/core/prepare';
+import { conversationIdFor, entryIdFor, isOlderCopy, revisionOf } from '../../src/importers/core/prepare';
 import { importerFor } from '../../src/importers/registry';
 import { SearchIndex } from '../../src/search/engine';
 import { applySummary, makeEntrySummarizer, summarizeEntry } from '../../src/summarization/service';
@@ -79,8 +79,10 @@ describe('review regressions', () => {
       fatalError: null,
     };
     await saveImportBatch(batch);
-    const r = await recoverInterruptedWork();
-    assert.deepEqual(r, { imports: 1, summaries: 1 });
+    // No Web Locks in Node: recovery only settles work that is clearly stale.
+    assert.deepEqual(await recoverInterruptedWork(), { imports: 0, summaries: 1 });
+    const r = await recoverInterruptedWork(Date.now() + 13 * 60 * 60 * 1000);
+    assert.deepEqual(r, { imports: 1, summaries: 0 });
     assert.equal((await getImportBatch('imp_stuck'))?.status, 'interrupted');
     assert.equal((await getEntryView(entry.id))?.entry.summaryStatus, 'not_configured');
   });
@@ -283,5 +285,96 @@ describe('#6 local API rejects DNS-rebinding hosts', () => {
     assert.equal(await status({ host: `attacker.example:${port}` }), 403);
     assert.equal(await status({ host: `attacker.example:${port}`, origin: `http://attacker.example:${port}` }), 403);
     assert.equal(await status({ host: `localhost:${port}`, origin: 'http://attacker.example' }), 403);
+  });
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Second review pass (N1–N6)
+ * ---------------------------------------------------------------------------------------- */
+
+/** Minimal in-process Web Locks implementation for tests. */
+function installFakeLocks(mode: 'working' | 'denied') {
+  const held = new Set<string>();
+  const fake = {
+    async request(name: string, a: unknown, b?: unknown) {
+      if (mode === 'denied') throw Object.assign(new Error('Access to the Locks API is denied in this context.'), { name: 'SecurityError' });
+      const opts = (typeof a === 'function' ? {} : a) as { ifAvailable?: boolean };
+      const cb = (typeof a === 'function' ? a : b) as (lock: unknown) => Promise<unknown>;
+      if (held.has(name)) {
+        if (opts.ifAvailable) return cb(null);
+        throw new Error('test fake: lock contention not modelled');
+      }
+      held.add(name);
+      try {
+        return await cb({ name });
+      } finally {
+        held.delete(name);
+      }
+    },
+    async query() {
+      return { held: Array.from(held).map((name) => ({ name })) };
+    },
+  };
+  Object.defineProperty(globalThis.navigator, 'locks', { value: fake, configurable: true });
+  return { held, remove: () => Reflect.deleteProperty(globalThis.navigator, 'locks') };
+}
+
+describe('second review pass', () => {
+  beforeEach(freshDb);
+
+  it('N1 imports and summaries still work when the Locks API is denied', async () => {
+    const locks = installFakeLocks('denied');
+    try {
+      const batch = await importGpt();
+      assert.equal(batch.counts.imported, 2);
+      await summarizeEntry(HOLO, { label: 'T', summarize: async () => summary('With denied locks') }, { autoTag: true });
+      assert.equal((await getEntryView(HOLO))!.entry.title, 'With denied locks');
+    } finally {
+      locks.remove();
+    }
+  });
+
+  it('N2 older-copy detection prefers update time and never guesses without timestamps', () => {
+    const base = { updatedAt: '2026-05-02T00:00:00.000Z', lastMessageAt: '2026-05-01T00:00:00.000Z', messageCount: 10 };
+    // Switching back to an earlier branch: later update time, earlier last message → not older.
+    assert.equal(isOlderCopy({ ...base, updatedAt: '2026-05-03T00:00:00.000Z', lastMessageAt: '2026-04-20T00:00:00.000Z', messageCount: 6 }, base), false);
+    assert.equal(isOlderCopy({ ...base, updatedAt: '2026-04-01T00:00:00.000Z' }, base), true);
+    assert.equal(isOlderCopy({ updatedAt: null, lastMessageAt: null, messageCount: 3 }, { updatedAt: null, lastMessageAt: null, messageCount: 9 }), false);
+    assert.equal(isOlderCopy({ updatedAt: null, lastMessageAt: '2026-01-01T00:00:00.000Z', messageCount: 3 }, { updatedAt: null, lastMessageAt: '2026-02-01T00:00:00.000Z', messageCount: 3 }), true);
+  });
+
+  it('N2 turning off "skip already imported" re-imports even an older copy', async () => {
+    await importGpt();
+    const batch = await importGpt(olderHologram(8), { skipExisting: false });
+    assert.equal(batch.counts.updated, 1);
+    assert.equal((await getEntryView(HOLO))!.messages.length, 8);
+  });
+
+  it('N3 recovery never settles work whose lock is held (another tab), but settles abandoned work', async () => {
+    const locks = installFakeLocks('working');
+    try {
+      await importGpt();
+      const db = await getDb();
+      const entry = (await getEntryView(HOLO))!.derived;
+      await db.write('entries', (tx) => tx.put('entries', { ...entry, summaryStatus: 'pending', summaryStartedAt: new Date().toISOString() }));
+      const running: ImportBatch = { id: 'imp_live', archiveFileName: 'x.zip', archiveSize: 1, source: 'chatgpt', startedAt: new Date().toISOString(), finishedAt: null, status: 'running', options: OPTS, counts: emptyCounts(), issues: [], entryIds: [], fatalError: null };
+      await saveImportBatch(running);
+      locks.held.add('cj:import:imp_live');
+      locks.held.add(`cj:summary:${HOLO}`);
+      assert.deepEqual(await recoverInterruptedWork(), { imports: 0, summaries: 0 });
+      assert.equal((await getImportBatch('imp_live'))?.status, 'running');
+      locks.held.clear();
+      assert.deepEqual(await recoverInterruptedWork(), { imports: 1, summaries: 1 });
+      assert.equal((await getImportBatch('imp_live'))?.status, 'interrupted');
+    } finally {
+      locks.remove();
+    }
+  });
+
+  it('N6 the revision reflects attachment text and the parser version', async () => {
+    const [conv] = (await importerFor('claude').parse(await zipArchive('c.zip', sampleClaudeExportFiles()))).conversations;
+    const a = revisionOf(conv!);
+    conv!.messages[0]!.attachments.push({ name: 'Pasted text', mimeType: null, size: null, extractedText: 'hello' });
+    assert.notEqual(revisionOf(conv!), a);
   });
 });

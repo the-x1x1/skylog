@@ -40,9 +40,18 @@ export function blobKeyForImage(imageId: string): string {
   return `blob:${imageId}`;
 }
 
+/**
+ * Bump when parsers extract more from the same export, so a re-import refreshes conversations
+ * imported by an older version instead of skipping them as unchanged.
+ */
+export const PARSER_REVISION = 2;
+
 export function revisionOf(p: ParsedConversation): string {
-  const parts: (string | number | null)[] = [p.updatedAt, p.messages.length];
-  for (const m of p.messages) parts.push(m.sourceMessageId, m.text.length, m.imageKeys.length);
+  const parts: (string | number | null)[] = [PARSER_REVISION, p.updatedAt, p.messages.length];
+  for (const m of p.messages) {
+    parts.push(m.sourceMessageId, m.text.length, m.imageKeys.length);
+    for (const a of m.attachments) parts.push(a.name, a.extractedText?.length ?? 0);
+  }
   for (const i of p.images) parts.push(i.key);
   return `${p.messages.length}:${hashParts(parts)}`;
 }
@@ -233,9 +242,24 @@ function keepValidRefs(items: DerivedItem[], valid: Set<string>): DerivedItem[] 
   return items.map((it) => ({ ...it, sourceMessageIds: it.sourceMessageIds.filter((id) => valid.has(id)) }));
 }
 
-/** The latest activity we know of for a conversation. */
-function lastActivity(c: Pick<ConversationRecord, 'lastMessageAt' | 'updatedAt'>): string | null {
-  return c.lastMessageAt ?? c.updatedAt ?? null;
+/**
+ * True when `incoming` is clearly an older copy of `existing`. The export's own update time wins
+ * (switching back to an earlier ChatGPT branch moves update_time forward even though the last
+ * visible message is older). Without comparable timestamps nothing is judged older.
+ */
+export function isOlderCopy(
+  incoming: Pick<ConversationRecord, 'updatedAt' | 'lastMessageAt' | 'messageCount'>,
+  existing: Pick<ConversationRecord, 'updatedAt' | 'lastMessageAt' | 'messageCount'>,
+): boolean {
+  if (incoming.updatedAt && existing.updatedAt) {
+    if (incoming.updatedAt !== existing.updatedAt) return incoming.updatedAt < existing.updatedAt;
+    return !!incoming.lastMessageAt && incoming.lastMessageAt === existing.lastMessageAt && incoming.messageCount < existing.messageCount;
+  }
+  if (incoming.lastMessageAt && existing.lastMessageAt) {
+    if (incoming.lastMessageAt !== existing.lastMessageAt) return incoming.lastMessageAt < existing.lastMessageAt;
+    return incoming.messageCount < existing.messageCount;
+  }
+  return false;
 }
 
 /** An entry "has a summary" once one was ever generated, whatever its current status. */
@@ -270,14 +294,11 @@ export async function persistPrepared(prepared: PreparedConversation, opts: { sk
         note,
       });
 
-      if (existing && !sameRevision) {
-        const incoming = lastActivity(conversation);
-        const current = lastActivity(existing);
-        const older = !!incoming && !!current && incoming < current;
-        const fewer = incoming === current && conversation.messageCount < existing.messageCount;
-        if (older || fewer) {
-          return skip('older', `Skipped an older copy of this conversation; the journal already has a newer version${current ? ` (last activity ${current.slice(0, 10)})` : ''}.`);
-        }
+      // With "skip already imported" on, an older copy never replaces a newer one. Turning the
+      // option off re-imports everything from the file, as the user asked.
+      if (existing && !sameRevision && opts.skipExisting && isOlderCopy(conversation, existing)) {
+        const current = existing.updatedAt ?? existing.lastMessageAt;
+        return skip('older', `Skipped an older copy of this conversation; the journal already has a newer version${current ? ` (updated ${current.slice(0, 10)})` : ''}.`);
       }
 
       const keepBlobs = new Set<string>();

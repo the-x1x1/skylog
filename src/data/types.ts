@@ -136,6 +136,8 @@ export interface JournalEntry {
   summaryGeneratedAt: string | null;
   /** The conversation changed after the summary was generated. */
   summaryOutdated: boolean;
+  /** When the running summary started (set while status is 'pending'). */
+  summaryStartedAt?: string | null;
   isSample?: boolean;
 }
 

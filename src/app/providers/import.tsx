@@ -3,7 +3,9 @@ import type { ImportBatch, ImportOptions, Source } from '../../data/types';
 import type { DetectionResult } from '../../importers/core/detect';
 import type { ImportPreview, ImportProgress } from '../../importers/core/types';
 import { createImportSession, type ImportSession } from '../../importers/worker/client';
+import { recoverInterruptedWork } from '../../data/recovery';
 import { loadSummaryConfig } from '../../summarization/service';
+import { useLocation } from '../router';
 
 export type ImportStep =
   | { kind: 'choose'; error?: string }
@@ -85,6 +87,8 @@ export function ImportProvider({ children }: { children: ReactNode }) {
         setStep({ kind: 'done', batch });
       } catch (err) {
         reset(err instanceof Error ? err.message : String(err));
+        // The worker may have died mid-import; settle anything it left running or pending.
+        void recoverInterruptedWork().catch(() => undefined);
       }
     },
     [options, reset],
@@ -94,6 +98,17 @@ export function ImportProvider({ children }: { children: ReactNode }) {
     setStep((s) => (s.kind === 'running' ? { ...s, cancelling: true } : s));
     sessionRef.current?.cancel();
   }, []);
+
+  // Once you've seen a finished import (or an error) and leave the Import page, the next visit
+  // starts fresh; the report stays in Import history. An import that finishes while you're
+  // elsewhere still shows its result when you come back.
+  const { path } = useLocation();
+  const lastPath = useRef(path);
+  useEffect(() => {
+    const left = lastPath.current === '/import' && path !== '/import';
+    lastPath.current = path;
+    if (left && (step.kind === 'done' || (step.kind === 'choose' && step.error))) reset();
+  }, [path, step, reset]);
 
   const running = step.kind === 'running';
   useEffect(() => {

@@ -98,6 +98,7 @@ export async function applySummary(entryId: string, summary: JournalSummary, pro
       summaryError: null,
       summaryProvider: providerLabel,
       summaryGeneratedAt: now,
+      summaryStartedAt: null,
       summaryOutdated: false,
       updatedAt: now,
     };
@@ -106,7 +107,7 @@ export async function applySummary(entryId: string, summary: JournalSummary, pro
   notifyChange({ stores: ['entries', 'collections'], conversationIds: [conversationId] });
 }
 
-async function setStatus(entryId: string, patch: Pick<JournalEntry, 'summaryStatus' | 'summaryError'>): Promise<void> {
+async function setStatus(entryId: string, patch: Pick<JournalEntry, 'summaryStatus' | 'summaryError'> & { summaryStartedAt?: string | null }): Promise<void> {
   const db = await getDb();
   let conversationId = '';
   await db.write('entries', async (tx) => {
@@ -131,7 +132,7 @@ export function summarizeEntry(entryId: string, provider: SummaryProvider, opts:
     const before = view.derived;
     const previousStatus: JournalEntry['summaryStatus'] =
       before.summaryStatus === 'pending' ? (hasGeneratedSummary(before) ? 'complete' : 'not_configured') : before.summaryStatus;
-    await setStatus(entryId, { summaryStatus: 'pending', summaryError: null });
+    await setStatus(entryId, { summaryStatus: 'pending', summaryError: null, summaryStartedAt: new Date().toISOString() });
     try {
       const summary = await provider.summarize(buildSummaryInput(view, opts.autoTag), opts.signal);
       await applySummary(entryId, summary, provider.label, { autoTag: opts.autoTag });
@@ -140,8 +141,8 @@ export function summarizeEntry(entryId: string, provider: SummaryProvider, opts:
       await setStatus(
         entryId,
         aborted
-          ? { summaryStatus: previousStatus, summaryError: before.summaryError }
-          : { summaryStatus: 'failed', summaryError: err instanceof Error ? err.message : String(err) },
+          ? { summaryStatus: previousStatus, summaryError: before.summaryError, summaryStartedAt: null }
+          : { summaryStatus: 'failed', summaryError: err instanceof Error ? err.message : String(err), summaryStartedAt: null },
       );
       throw err;
     }

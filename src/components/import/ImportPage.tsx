@@ -97,17 +97,6 @@ export function ImportPage() {
     if (!providerReady && options.generateSummaries) setOptions({ ...options, generateSummaries: false });
   }, [providerReady, options, setOptions]);
 
-  // A finished import's summary is shown once (even if it finished while you were elsewhere);
-  // after you've seen it, leaving the page starts the next visit fresh.
-  const stepRef = useRef(step);
-  stepRef.current = step;
-  useEffect(
-    () => () => {
-      const k = stepRef.current.kind;
-      if (k === 'done' || (k === 'choose' && stepRef.current.error)) reset();
-    },
-    [reset],
-  );
 
   return (
     <div className="page page--narrow import-page">
@@ -219,7 +208,9 @@ export function ImportPage() {
               <input type="checkbox" checked={options.skipExisting} onChange={(e) => setOptions({ ...options, skipExisting: e.target.checked })} />
               <span>
                 <span className="check__label">Skip conversations already imported</span>
-                <span className="check__hint">Unchanged conversations are skipped; ones that changed since are updated. Your edits are kept either way.</span>
+                <span className="check__hint">
+                  Unchanged conversations are skipped, changed ones are updated, and an older copy never replaces a newer one. Turn off to re-import everything from this file. Your edits are kept either way.
+                </span>
               </span>
             </label>
           </fieldset>
