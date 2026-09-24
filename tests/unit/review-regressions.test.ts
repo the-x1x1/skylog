@@ -79,10 +79,16 @@ describe('review regressions', () => {
       fatalError: null,
     };
     await saveImportBatch(batch);
-    // No Web Locks in Node: recovery only settles work that is clearly stale.
-    assert.deepEqual(await recoverInterruptedWork(), { imports: 0, summaries: 1 });
-    const r = await recoverInterruptedWork(Date.now() + 13 * 60 * 60 * 1000);
-    assert.deepEqual(r, { imports: 1, summaries: 0 });
+    // Without Web Locks (hidden here; Node 24+ and browsers have them) recovery can't tell live
+    // work in another tab from abandoned work, so it only settles work that is clearly stale.
+    const noLocks = installFakeLocks('missing');
+    try {
+      assert.deepEqual(await recoverInterruptedWork(), { imports: 0, summaries: 1 });
+      const r = await recoverInterruptedWork(Date.now() + 13 * 60 * 60 * 1000);
+      assert.deepEqual(r, { imports: 1, summaries: 0 });
+    } finally {
+      noLocks.remove();
+    }
     assert.equal((await getImportBatch('imp_stuck'))?.status, 'interrupted');
     assert.equal((await getEntryView(entry.id))?.entry.summaryStatus, 'not_configured');
   });
@@ -292,9 +298,17 @@ describe('#6 local API rejects DNS-rebinding hosts', () => {
  * Second review pass (N1–N6)
  * ---------------------------------------------------------------------------------------- */
 
-/** Minimal in-process Web Locks implementation for tests. */
-function installFakeLocks(mode: 'working' | 'denied') {
+/**
+ * Minimal in-process Web Locks implementation for tests, so results don't depend on whether the
+ * Node version running them has its own navigator.locks (Node 24+ does).
+ * 'missing' hides the API entirely, like an old browser.
+ */
+function installFakeLocks(mode: 'working' | 'denied' | 'missing') {
   const held = new Set<string>();
+  if (mode === 'missing') {
+    Object.defineProperty(globalThis.navigator, 'locks', { value: undefined, configurable: true });
+    return { held, remove: () => Reflect.deleteProperty(globalThis.navigator, 'locks') };
+  }
   const fake = {
     async request(name: string, a: unknown, b?: unknown) {
       if (mode === 'denied') throw Object.assign(new Error('Access to the Locks API is denied in this context.'), { name: 'SecurityError' });
